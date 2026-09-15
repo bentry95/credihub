@@ -1,0 +1,137 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isStaff(institutionId) {
+      return isSignedIn() && (
+        request.auth.token.institutionId == institutionId || 
+        getUserData().institutionId == institutionId
+      );
+    }
+    
+    function isInstitutionAdmin() {
+        return isSignedIn() && (
+          request.auth.token.role == 'institution-admin' || 
+          getUserData().role == 'institution-admin'
+        );
+    }
+    
+    function isPlatformAdmin() {
+      return isSignedIn() && (
+        request.auth.token.role == 'admin' || 
+        getUserData().role == 'admin'
+      );
+    }
+
+    // --- User Profiles ---
+    
+    match /users/{userId} {
+      // Users can read their own profile. Admins can read profiles in their institution.
+      allow read: if request.auth.uid == userId || (isSignedIn() && isInstitutionAdmin() && getUserData().institutionId == resource.data.institutionId);
+      // Admins can update users in their institution for activation/role assignment
+      allow update: if request.auth.uid == userId || (isSignedIn() && isInstitutionAdmin() && getUserData().institutionId == resource.data.institutionId);
+      // Allow signup flow to create a profile (handled by client SDK)
+      allow create: if isSignedIn();
+    }
+    
+    match /pendingUsers/{pendingUserId} {
+        allow read, write: if isPlatformAdmin();
+    }
+
+    // --- Institutions & Sub-collections ---
+
+    match /institutions/{institutionId} {
+      // Publicly readable for identification during signup
+      allow get: if true;
+      allow read: if isStaff(institutionId) || isPlatformAdmin();
+      allow update: if (isInstitutionAdmin() && getUserData().institutionId == institutionId) || isPlatformAdmin();
+      
+      // Configuration & Settings
+      match /loanProducts/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /savingsProducts/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /shareProducts/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /fees/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /roles/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /tellers/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /financialYears/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /inventoryCategories/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /unitsOfMeasure/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      match /warehouses/{id} { allow read: if isStaff(institutionId) || isPlatformAdmin(); allow write: if isInstitutionAdmin() || isPlatformAdmin(); }
+      
+      // Operational Data
+      match /chartOfAccounts/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /customers/{customerId} {
+        allow read, write: if isStaff(institutionId) || isPlatformAdmin();
+        match /savingsAccounts/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+        match /shareAccounts/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      }
+      
+      match /loanApplications/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /runningLoans/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /journals/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /unfinalisedApplications/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /workflowAudits/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /eodSubmissions/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /inventoryItems/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /staffAssets/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /suppliers/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /employers/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /tickets/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /invoices/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      match /payrolls/{id} { 
+          allow read, write: if isStaff(institutionId) || isPlatformAdmin(); 
+          match /payslips/{ps} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
+      }
+      
+      // Invitation Codes - Public read for signup validation
+      match /invitationCodes/{codeId} {
+        allow read: if true;
+        // Mark as used during signup
+        allow update: if request.resource.data.status == 'Used' && resource.data.status == 'Active';
+      }
+    }
+    
+    // --- Collection Group Rules for Global Reports ---
+    
+    match /{path=**}/journals/{id} {
+        allow read: if isSignedIn(); 
+    }
+    match /{path=**}/invoices/{id} {
+        allow read: if isPlatformAdmin() || (isSignedIn() && getUserData().institutionId != null);
+    }
+    match /{path=**}/payments/{id} {
+        allow read: if isPlatformAdmin() || (isSignedIn() && getUserData().institutionId != null);
+    }
+    match /{path=**}/loanApplications/{id} {
+        allow read: if isSignedIn();
+    }
+    match /{path=**}/runningLoans/{id} {
+        allow read: if isSignedIn();
+    }
+    match /{path=**}/savingsAccounts/{id} {
+        allow read: if isSignedIn();
+    }
+    match /{path=**}/tickets/{id} {
+        allow read, write: if isPlatformAdmin() || (isSignedIn() && getUserData().institutionId != null);
+    }
+    match /{path=**}/payslips/{id} {
+        allow read: if isSignedIn(); 
+    }
+
+    // Platform Admin Global Access
+    match /{document=**} {
+      allow read, write: if isPlatformAdmin();
+    }
+  }
+}
