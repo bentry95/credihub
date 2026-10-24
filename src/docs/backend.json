@@ -1,0 +1,1544 @@
+
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the application.",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique identifier for the User entity, matching the Firebase Auth UID. Used as the document ID."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user.",
+          "format": "email"
+        },
+        "firstName": {
+          "type": "string",
+          "description": "User's first name."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "User's last name."
+        },
+        "name": {
+          "type": "string",
+          "description": "User's full name."
+        },
+        "employeeId": {
+          "type": "string",
+          "description": "The user's employee ID number."
+        },
+        "branchIds": {
+            "type": "array",
+            "description": "The IDs of the branches the user is assigned to.",
+            "items": { "type": "string" }
+        },
+        "status": {
+          "type": "string",
+          "description": "The user's account status.",
+          "enum": [
+            "Active",
+            "Disabled"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "description": "The user's role in the system.",
+          "enum": [
+            "admin",
+            "institution-admin",
+            "staff"
+          ]
+        },
+        "customRoleId": {
+          "type": "string",
+          "description": "The ID of the custom role assigned to the user, if applicable."
+        },
+        "customRoleName": {
+          "type": "string",
+          "description": "The name of the custom role assigned to the user."
+        },
+        "institutionId": {
+          "type": "string",
+          "description": "The ID of the institution the user belongs to. Required for institution-admin and staff roles."
+        },
+        "appraisalLimit": {
+          "type": "number",
+          "description": "The maximum loan amount this user is permitted to appraise."
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "firstName"
+      ]
+    },
+     "PendingUser": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PendingUser",
+      "type": "object",
+      "description": "Represents a user who has signed up but is awaiting admin approval.",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID." },
+        "email": { "type": "string", "format": "email" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "firstName", "lastName", "name", "status", "createdAt"]
+    },
+    "Institution": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Institution",
+      "type": "object",
+      "description": "Represents a financial institution.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Institution entity."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the institution was created."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the financial institution."
+        },
+        "shortName": {
+          "type": "string",
+          "description": "A shorter name or acronym for the institution."
+        },
+        "registrationNumber": {
+          "type": "string",
+          "description": "The official registration number of the institution."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the financial institution.",
+          "enum": [
+            "SACCO",
+            "MFI"
+          ]
+        },
+         "isDepositTaking": {
+          "type": "boolean",
+          "description": "Indicates whether the institution is licensed to take deposits from members or the public."
+        },
+        "location": {
+          "type": "string",
+          "description": "The district or city where the institution is located."
+        },
+        "physicalAddress": {
+          "type": "string",
+          "description": "The physical street address of the institution's main office."
+        },
+        "hqBranch": {
+            "type": "object",
+            "description": "The details of the main branch, which defaults to 'Headquarters'.",
+            "properties": {
+                "id": { "type": "string", "description": "Branch ID, defaults to '01' for HQ." },
+                "name": { "type": "string", "description": "Name of the HQ branch." },
+                "code": { "type": "string", "description": "Branch code, defaults to '01' for HQ." },
+                "location": { "type": "string", "description": "Location of the HQ branch." }
+            },
+            "required": ["id", "name", "code", "location"]
+        },
+        "contactEmail": {
+          "type": "string",
+          "description": "The primary contact email for the institution.",
+          "format": "email"
+        },
+        "contactPhone": {
+          "type": "string",
+          "description": "The primary contact phone number for the institution."
+        },
+        "website": {
+          "type": "string",
+          "description": "The institution's official website URL.",
+          "format": "uri"
+        },
+        "commissionTiers": {
+          "type": "array",
+          "description": "Tiered commission rates for the institution.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": { "type": "number" },
+              "to": { "type": "number" },
+              "rate": { "type": "number" }
+            },
+            "required": ["from", "to", "rate"]
+          }
+        },
+        "customerCounter": {
+          "type": "number",
+          "description": "A counter that increments for each new customer to generate unique account numbers."
+        },
+        "loanCounter": {
+          "type": "number",
+          "description": "A counter that increments for each new loan to generate unique loan IDs."
+        },
+        "journalBatchCounter": {
+          "type": "number",
+          "description": "A counter that increments for each new journal batch to generate unique batch IDs."
+        },
+        "transactionReceiptCounter": {
+            "type": "number",
+            "description": "A counter that increments for each new receipted transaction to generate unique transaction IDs."
+        },
+        "systemDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The current operational date for the institution, managed by the EOD process."
+        },
+        "loanLossProvision": {
+            "type": "object",
+            "description": "Rules for loan loss provisioning based on PAR buckets.",
+            "properties": {
+                "par1to30": { "type": "number" },
+                "par31to60": { "type": "number" },
+                "par61to90": { "type": "number" },
+                "parOver90": { "type": "number" }
+            }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "shortName",
+        "registrationNumber",
+        "type",
+        "isDepositTaking",
+        "location",
+        "physicalAddress",
+        "hqBranch",
+        "contactEmail",
+        "contactPhone",
+        "createdAt",
+        "customerCounter",
+        "loanCounter",
+        "systemDate"
+      ]
+    },
+    "Employer": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Employer",
+      "type": "object",
+      "description": "Represents an employer entity in the system.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the employer." },
+        "name": { "type": "string", "description": "The official name of the employer." },
+        "address": { "type": "string", "description": "Physical address of the employer." },
+        "contactPerson": { "type": "string", "description": "Name of the primary contact person." },
+        "contactPhone": { "type": "string", "description": "Primary contact phone number." },
+        "contactEmail": { "type": "string", "format": "email", "description": "Primary contact email address." }
+      },
+      "required": ["id", "name"]
+    },
+    "Branch": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Branch",
+      "type": "object",
+      "description": "Represents a single branch of a financial institution.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Branch, typically a 2-digit code."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the branch."
+        },
+        "code": {
+          "type": "string",
+          "description": "A unique 2-digit code for the branch."
+        },
+        "location": {
+          "type": "string",
+          "description": "The physical location (district) of the branch."
+        }
+      },
+      "required": ["id", "name", "code", "location"]
+    },
+    "Invoice": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Invoice",
+      "type": "object",
+      "description": "Represents a monthly commission invoice for an institution.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Invoice."
+        },
+        "institutionId": {
+          "type": "string",
+          "description": "The ID of the institution this invoice belongs to."
+        },
+        "period": {
+          "type": "string",
+          "description": "The billing period in 'YYYY-MM' format."
+        },
+        "amount": {
+          "type": "number",
+          "description": "The total amount due on the invoice."
+        },
+        "amountPaid": {
+          "type": "number",
+          "description": "The total amount that has been paid towards the invoice."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the invoice.",
+          "enum": [
+            "Pending",
+            "Paid",
+            "Partially Paid",
+            "Overdue"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the invoice was generated."
+        },
+        "dueDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date by which the invoice should be paid."
+        }
+      },
+      "required": [
+        "id",
+        "institutionId",
+        "period",
+        "amount",
+        "amountPaid",
+        "status",
+        "createdAt",
+        "dueDate"
+      ]
+    },
+    "Payment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Payment",
+      "type": "object",
+      "description": "Represents a payment made by an institution towards an invoice.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Payment."
+        },
+        "invoiceId": {
+          "type": "string",
+          "description": "The ID of the invoice this payment is for."
+        },
+        "institutionId": {
+          "type": "string",
+          "description": "The ID of the institution making the payment."
+        },
+        "amount": {
+          "type": "number",
+          "description": "The amount paid."
+        },
+        "reference": {
+          "type": "string",
+          "description": "A payment reference, such as a transaction ID."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the payment was recorded."
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the payment confirmation.",
+          "enum": [
+            "Pending Confirmation",
+            "Confirmed"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "invoiceId",
+        "institutionId",
+        "amount",
+        "reference",
+        "createdAt",
+        "status"
+      ]
+    },
+    "Loan": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Loan",
+      "type": "object",
+      "description": "Represents a loan in the system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Loan."
+        },
+        "institutionId": {
+          "type": "string",
+          "description": "The ID of the institution that issued the loan."
+        },
+        "branchId": {
+            "type": "string",
+            "description": "The ID of the branch this loan belongs to."
+        },
+        "customerId": {
+          "type": "string",
+          "description": "The ID of the customer who took the loan."
+        },
+        "loanProductId": {
+          "type": "string",
+          "description": "The ID of the loan product this loan is based on."
+        },
+        "amount": {
+          "type": "number",
+          "description": "The principal amount of the loan."
+        },
+        "outstandingPrincipal": {
+          "type": "number",
+          "description": "The current remaining principal balance of the loan."
+        },
+        "term": {
+          "type": "number",
+          "description": "The duration of the loan term."
+        },
+        "tenureUnit": {
+            "type": "string",
+            "enum": ["Days", "Months", "Years"],
+            "description": "The unit for the loan term (Days, Months, or Years)."
+        },
+        "purpose": {
+            "type": "string",
+            "description": "The purpose of the loan."
+        },
+        "dateApplied": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the loan application was submitted."
+        },
+        "disbursalDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the loan was disbursed."
+        },
+        "submittedBy": {
+          "type": "string",
+          "description": "The ID of the staff member who submitted the application."
+        },
+        "appraisedBy": {
+          "type": "string",
+          "description": "The ID of the staff member who appraised the loan."
+        },
+        "appraisalNotes": {
+            "type": "string",
+            "description": "Notes from the loan officer during appraisal."
+        },
+        "approvedBy": {
+            "type": "string",
+            "description": "The ID of the staff member who approved the loan."
+        },
+        "approvalDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The date the loan was approved."
+        },
+        "fees": {
+          "type": "array",
+          "description": "A snapshot of the fees applied to this loan at the time of approval.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "feeId": { "type": "string" },
+              "name": { "type": "string" },
+              "amount": { "type": "number" },
+              "collectionMethod": { "type": "string" },
+              "incomeAccountId": { "type": "string" }
+            },
+            "required": ["feeId", "name", "amount", "collectionMethod", "incomeAccountId"]
+          }
+        },
+        "isRescheduled": {
+          "type": "boolean",
+          "description": "Flag to indicate if this loan is a result of a reschedule."
+        },
+        "isTopUp": {
+          "type": "boolean",
+          "description": "Flag to indicate if this loan is a result of a top-up."
+        },
+        "originalLoanId": {
+          "type": "string",
+          "description": "If rescheduled or topped up, this holds the ID of the original loan."
+        },
+        "rescheduledBy": {
+          "type": "string",
+          "description": "The ID of the staff member who initiated the reschedule."
+        },
+        "topUpDetails": {
+            "type": "object",
+            "properties": {
+                "outstandingBalance": { "type": "number" },
+                "topUpAmount": { "type": "number" }
+            }
+        },
+        "reversalReason": { "type": "string", "description": "The reason for requesting a loan reversal." },
+        "reversalNotes": { "type": "string", "description": "Detailed notes explaining the reversal." },
+        "reversalRequestedBy": { "type": "string", "description": "The ID of the user who requested the reversal." },
+        "writeOffReason": { "type": "string", "description": "The reason for requesting a loan write-off." },
+        "writeOffNotes": { "type": "string", "description": "Detailed notes explaining the write-off." },
+        "auditHistory": {
+          "type": "array",
+          "description": "A log of all significant events and actions taken on the loan.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": { "type": "string", "format": "date-time" },
+              "userId": { "type": "string" },
+              "action": { "type": "string" },
+              "details": { "type": "string" }
+            },
+            "required": ["timestamp", "userId", "action"]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Application",
+            "Appraisal",
+            "Pending Approval",
+            "Approved",
+            "Rejected",
+            "Disbursed",
+            "Repaid",
+            "Overdue",
+            "Reversal Pending",
+            "Reversed",
+            "Write-Off Pending",
+            "Written-Off"
+          ],
+          "description": "The current status of the loan."
+        }
+      },
+      "required": [
+        "id",
+        "institutionId",
+        "branchId",
+        "customerId",
+        "loanProductId",
+        "amount",
+        "outstandingPrincipal",
+        "term",
+        "tenureUnit",
+        "dateApplied",
+        "status"
+      ]
+    },
+    "ChartOfAccount": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ChartOfAccount",
+      "type": "object",
+      "description": "Represents a single account in the General Ledger.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the account."
+        },
+        "glCode": {
+          "type": "string",
+          "description": "The General Ledger code for the account."
+        },
+        "accountName": {
+          "type": "string",
+          "description": "The name of the account (e.g., Cash on Hand)."
+        },
+        "accountType": {
+          "type": "string",
+          "description": "The main accounting category.",
+          "enum": [
+            "Asset",
+            "Liability",
+            "Equity",
+            "Income",
+            "Expense"
+          ]
+        },
+        "subType": {
+          "type": "string",
+          "description": "A more detailed classification (e.g., Current Asset)."
+        },
+        "isEditable": {
+          "type": "boolean",
+          "description": "Whether the account details can be edited."
+        }
+      },
+      "required": [
+        "id",
+        "glCode",
+        "accountName",
+        "accountType",
+        "subType",
+        "isEditable"
+      ]
+    },
+    "JournalEntry": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "JournalEntry",
+      "type": "object",
+      "description": "Represents a double-entry financial transaction for a specific branch.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the journal entry, also serving as the Batch ID."
+        },
+        "branchId": {
+          "type": "string",
+          "description": "The ID of the branch where this transaction occurred."
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the transaction occurred."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the transaction."
+        },
+        "transactions": {
+          "type": "array",
+          "description": "An array of debits and credits that make up the entry.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "accountId": { "type": "string" },
+              "debit": { "type": "number" },
+              "credit": { "type": "number" }
+            },
+            "required": ["accountId"]
+          }
+        },
+        "status": {
+            "type": "string",
+            "enum": ["Posted", "Pending", "Rejected", "Reversal Pending", "Reversed"],
+            "description": "The status of the journal entry."
+        },
+        "reversesJournalId": {
+          "type": "string",
+          "description": "If this is a reversal entry, this holds the ID of the original entry."
+        }
+      },
+      "required": [
+        "id",
+        "branchId",
+        "date",
+        "description",
+        "transactions",
+        "status"
+      ]
+    },
+     "SavingsProduct": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SavingsProduct",
+      "type": "object",
+      "description": "Represents a configurable savings product offered by an institution.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the savings product." },
+        "institutionId": { "type": "string", "description": "The ID of the institution offering this product." },
+        "name": { "type": "string", "description": "Public name of the savings product (e.g., 'Flexi Save Account')." },
+        "code": { "type": "string", "description": "Unique internal code for the product." },
+        "description": { "type": "string", "description": "A short summary of the product's purpose and benefits." },
+        "status": { "type": "string", "enum": ["Active", "Inactive"], "description": "The current status of the product." },
+        "startDate": { "type": ["string", "null"], "format": "date-time", "description": "Optional date when the product becomes available." },
+        "endDate": { "type": ["string", "null"], "format": "date-time", "description": "Optional date when the product is no longer available." },
+        "initialDeposit": { "type": "number", "description": "The required initial deposit amount." },
+        "minDeposit": { "type": "number", "description": "The minimum amount for subsequent deposits." },
+        "maxDeposit": { "type": "number", "description": "The maximum amount for a single deposit transaction." },
+        "interestRate": { "type": "number", "description": "The annual interest rate (p.a.)." },
+        "interestCalculation": { "type": "string", "enum": ["Daily Balance", "Average Balance"], "description": "Method used to calculate interest." },
+        "interestPosting": { "type": "string", "enum": ["Monthly", "Quarterly", "Annually"], "description": "Frequency of posting interest to the account." },
+        "withdrawalAllowance": { "type": "string", "enum": ["Anytime", "Only on Maturity"], "description": "When withdrawals are permitted." },
+        "minWithdrawal": { "type": "number", "description": "The minimum amount that can be withdrawn at a time." },
+        "maxWithdrawalsPerMonth": { "type": "number", "description": "Limit on the number of withdrawals per month." },
+        "earlyWithdrawalPenalty": { "type": "number", "description": "Penalty percentage for early withdrawals from fixed-term products." },
+        "dormancyPeriodMonths": { "type": "number", "description": "Months of inactivity before an account is marked as dormant." },
+        "schemeType": { "type": "string", "enum": ["Flexible", "Recurring", "Fixed Deposit"], "description": "The type of savings scheme." },
+        "lockInPeriodMonths": { "type": "number", "description": "Duration (in months) during which funds cannot be withdrawn." },
+        "maturityPeriodMonths": { "type": "number", "description": "Total maturity period for fixed-term products." },
+        "autoRenew": { "type": "boolean", "description": "Whether the product automatically renews upon maturity." },
+        "targetMembers": { "type": "string", "enum": ["Individuals", "Groups", "Both"], "description": "Who can open this account." },
+        "allowJointAccounts": { "type": "boolean", "description": "If multiple individuals can jointly own an account." },
+        "requireNominee": { "type": "boolean", "description": "If nominee information is mandatory." },
+        "allowLoanRecovery": { "type": "boolean", "description": "Allows auto-debiting to cover overdue loan payments." },
+        "charges": { "type": "array", "items": { "type": "string" }, "description": "List of IDs of applicable fees from the Fee Library." },
+        "savingsControlAccountId": { "type": "string", "description": "ID of the GL liability account to link this product to." }
+      },
+      "required": [
+        "id", "institutionId", "name", "code", "status", "interestRate", "schemeType", "savingsControlAccountId"
+      ]
+    },
+    "ShareProduct": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ShareProduct",
+      "type": "object",
+      "description": "Represents a configurable share product offered by a SACCO or Cooperative.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the share product." },
+        "name": { "type": "string", "description": "Name of the share product (e.g., Ordinary Shares)." },
+        "code": { "type": "string", "description": "A short, unique code for the product." },
+        "description": { "type": "string", "description": "A summary of the product's purpose and benefits." },
+        "status": { "type": "string", "enum": ["Active", "Inactive"], "description": "Current status of the product." },
+        "currency": { "type": "string", "description": "The currency of the shares." },
+        "minSharesPerMember": { "type": "number", "description": "Minimum number of shares a member must hold." },
+        "maxSharesPerMember": { "type": "number", "description": "Maximum number of shares a member can hold." },
+        "nominalValue": { "type": "number", "description": "The face value of a single share." },
+        "sharesPayableAccountId": { "type": "string", "description": "GL account for the total value of shares issued (Equity)." },
+        "shareApplicationAccountId": { "type": "string", "description": "Optional GL account to track funds for pending share applications." },
+        "sharePremiumAccountId": { "type": "string", "description": "Optional GL account for amounts paid above nominal value." },
+        "transactionChargesIncomeAccountId": { "type": "string", "description": "Optional GL account for income from share transaction fees." },
+        "allowPartialSharePurchase": { "type": "boolean", "description": "Allow members to pay for a single share in installments." },
+        "allowMonthlyShareContributions": { "type": "boolean", "description": "Allow regular monthly contributions towards shares." },
+        "allowLumpSumPurchases": { "type": "boolean", "description": "Allow members to buy multiple shares at once." },
+        "allowAutomaticDeductions": { "type": "boolean", "description": "Allow automatic share purchase deductions from savings." },
+        "minContributionAmount": { "type": "number", "description": "Minimum amount for a single contribution." },
+        "contributionFrequency": { "type": "string", "enum": ["Monthly", "Weekly", "Flexible"] },
+        "eligibleForDividends": { "type": "boolean", "description": "Determines if these shares qualify for dividend payouts." },
+        "dividendCalculationMethod": { "type": "string", "enum": ["Flat Rate", "Based on Share Balance", "Average Daily Balance"] },
+        "dividendPayableAccountId": { "type": "string", "description": "GL account for declared but unpaid dividends (Liability)." },
+        "retainedEarningsAccountId": { "type": "string", "description": "GL account from which dividends are paid (Equity)." },
+        "allowShareWithdrawal": { "type": "boolean", "description": "Determines if members can withdraw/sell their shares." },
+        "minHoldingPeriod": { "type": "number", "description": "Minimum number of months a member must hold shares before withdrawal." },
+        "withdrawalNoticePeriod": { "type": "number", "description": "Number of days notice required for a withdrawal." },
+        "withdrawalFee": { "type": "number", "description": "A flat or percentage fee charged on share withdrawal." },
+        "partialWithdrawalAllowed": { "type": "boolean", "description": "Allow members to withdraw a portion of their shares." },
+        "minMemberDuration": { "type": "number", "description": "Minimum membership duration (months) before a member can buy shares." },
+        "maxSharePercentage": { "type": "number", "description": "Maximum percentage of total institutional shares a single member can own." },
+        "requireApprovalForLargePurchases": { "type": "boolean" },
+        "linkedFees": { "type": "array", "items": { "type": "string" }, "description": "List of IDs of applicable fees from the Fee Library." }
+      },
+      "required": ["id", "name", "code", "status", "nominalValue", "sharesPayableAccountId", "eligibleForDividends", "allowShareWithdrawal"]
+    },
+    "SavingsAccount": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SavingsAccount",
+      "type": "object",
+      "description": "Represents a specific savings account for a customer.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the savings account." },
+        "branchId": { "type": "string", "description": "The ID of the branch this savings account belongs to." },
+        "productId": { "type": "string", "description": "The ID of the SavingsProduct this account is based on." },
+        "status": { "type": "string", "enum": ["Active", "Dormant", "Closed"], "description": "The current status of the savings account." },
+        "balance": { "type": "number", "description": "The current balance of the account." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "The timestamp when the account was opened." }
+      },
+      "required": ["id", "branchId", "productId", "status", "balance", "createdAt"]
+    },
+    "LoanProduct": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "LoanProduct",
+      "type": "object",
+      "description": "Represents a configurable loan product offered by an institution.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the loan product." },
+        "institutionId": { "type": "string", "description": "The ID of the institution offering this product." },
+        "name": { "type": "string", "description": "Public name of the loan product (e.g., 'SME Growth Loan')." },
+        "code": { "type": "string", "description": "A short, unique code for the product (e.g., 'SME01')." },
+        "description": { "type": "string", "description": "A summary of the product's purpose and benefits." },
+        "status": { "type": "string", "enum": ["Active", "Inactive"], "description": "Current status of the product." },
+        "loanType": { "type": "string", "enum": ["Personal", "Business", "Group", "Education"], "description": "The primary category of the loan." },
+        "minAmount": { "type": "number", "description": "Minimum principal amount allowed." },
+        "maxAmount": { "type": "number", "description": "Maximum principal amount allowed." },
+        "interestRateType": { "type": "string", "enum": ["Flat", "Reducing Balance"], "description": "Method of interest calculation." },
+        "amortizationMethod": { "type": "string", "enum": ["Equal Installments", "Fixed Principal + Interest"], "description": "Structure of loan repayments." },
+        "annualInterestRate": { "type": "number", "description": "The annual interest rate (p.a.)." },
+        "linkedFees": { "type": "array", "items": { "type": "string" }, "description": "List of IDs of applicable fees from the Fee Library." },
+        "linkedInventoryItems": {
+            "type": "array",
+            "description": "List of IDs of inventory items linked to this loan product (e.g., for asset financing).",
+            "items": { "type": "string" }
+        },
+        "repaymentFrequency": { "type": "string", "enum": ["Daily", "Weekly", "Monthly"], "description": "How often repayments are due." },
+        "minTerm": { "type": "number", "description": "Minimum allowed loan duration." },
+        "maxTerm": { "type": "number", "description": "Maximum allowed loan duration." },
+        "tenureUnit": {
+            "type": "string",
+            "enum": ["Days", "Months", "Years"],
+            "description": "The unit for the loan term (Days, Months, or Years)."
+        },
+        "gracePeriod": { "type": "number", "description": "Number of days before the first repayment is due." },
+        "disbursementMethods": { "type": "array", "items": { "type": "string", "enum": ["Cash", "Bank Transfer", "Cheque", "Mobile Money", "Teller"] }, "description": "Allowed methods for disbursing the loan." },
+        "repaymentMethods": { "type": "array", "items": { "type": "string", "enum": ["Cash", "Bank Transfer", "Cheque", "Mobile Money"] }, "description": "Allowed methods for repaying the loan." },
+        "loanPortfolioAccountId": { "type": "string", "description": "ID of the GL Asset account to track outstanding principal." },
+        "interestIncomeAccountId": { "type": "string", "description": "ID of the GL Income account to track interest earned." },
+        "minMemberDuration": { "type": "number", "description": "Minimum number of months a person must be a member to qualify." },
+        "minSavingsBalance": { "type": "number", "description": "Minimum savings balance required to qualify for the loan." },
+        "allowMultipleActiveLoans": { "type": "boolean", "description": "Permit customers to have more than one of this loan at the same time." },
+        "allowLoanTopUp": { "type": "boolean", "description": "Enable refinancing by adding funds to an active loan." },
+        "allowRescheduling": { "type": "boolean", "description": "Permit modification of loan terms for customers in distress." },
+        "allowEarlyRepayment": { "type": "boolean", "description": "Let customers pay off their loan ahead of schedule." }
+      },
+      "required": [
+        "id", "institutionId", "name", "code", "status", "loanType", "minAmount", "maxAmount", "interestRateType", "annualInterestRate", "repaymentFrequency", "minTerm", "maxTerm", "loanPortfolioAccountId", "interestIncomeAccountId"
+      ]
+    },
+    "Fee": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Fee",
+      "type": "object",
+      "description": "Represents a fee or charge that can be applied to a financial product.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the fee." },
+        "institutionId": { "type": "string", "description": "The ID of the institution this fee belongs to." },
+        "name": { "type": "string", "description": "The descriptive name of the fee (e.g., 'Loan Processing Fee')." },
+        "status": { "type": "string", "enum": ["Active", "Inactive"], "description": "Whether the fee is currently in use." },
+        "chargeType": { "type": "string", "enum": ["Upfront", "Periodic", "Penalty"], "description": "The category of the fee." },
+        "trigger": { "type": "string", "enum": ["On Disbursement", "On Top-Up", "On Late Payment", "On Deposit"], "description": "The system event that automatically applies this fee." },
+        "calculationMethod": { "type": "string", "enum": ["Flat Amount", "Percentage"], "description": "How the fee amount is calculated." },
+        "amount": { "type": ["number", "null"], "description": "The fixed amount for the fee, if calculationMethod is 'Flat Amount'." },
+        "percentage": { "type": ["number", "null"], "description": "The percentage for the fee, if calculationMethod is 'Percentage'." },
+        "percentageOf": { "type": ["string", "null"], "enum": ["Approved Amount", "Disbursed Amount", "Outstanding Balance"], "description": "The base value for percentage calculation." },
+        "collectionMethod": { "type": "string", "enum": ["Deduct from Disbursement", "Add to Principal", "Paid Separately"], "description": "How the fee is collected from the customer." },
+        "incomeAccountId": { "type": "string", "description": "The ID of the GL Income Account to post the revenue to." }
+      },
+      "required": [
+        "id", "institutionId", "name", "status", "chargeType", "trigger", "calculationMethod", "collectionMethod", "incomeAccountId"
+      ]
+    },
+    "Role": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Role",
+        "type": "object",
+        "description": "Represents a user role with a set of permissions.",
+        "properties": {
+            "id": { "type": "string", "description": "Unique identifier for the role." },
+            "institutionId": { "type": "string", "description": "The ID of the institution this role belongs to." },
+            "name": { "type": "string", "description": "The name of the role (e.g., 'Loan Officer')." },
+            "isSystemRole": { "type": "boolean", "description": "Indicates if the role is a non-editable system role." },
+            "permissions": {
+                "type": "array",
+                "description": "A list of permission keys assigned to this role.",
+                "items": { "type": "string" }
+            }
+        },
+        "required": ["id", "institutionId", "name", "isSystemRole", "permissions"]
+    },
+    "Teller": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Teller",
+      "type": "object",
+      "description": "Represents a teller configuration for an institution.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the teller configuration." },
+        "institutionId": { "type": "string", "description": "The ID of the institution this teller belongs to." },
+        "branchId": { "type": "string", "description": "The ID of the branch this teller is assigned to." },
+        "userId": { "type": "string", "description": "The ID of the staff member assigned as this teller." },
+        "role": { "type": "string", "enum": ["Regular Cashier", "Chief Cashier"], "description": "The assigned role for the teller." },
+        "tillAccountId": { "type": "string", "description": "The ID of the GL cash account linked to this teller's till." },
+        "maxCashLimit": { "type": "number", "description": "Maximum cash amount the teller can hold." },
+        "minDepositLimit": { "type": "number", "description": "Minimum transaction size for deposits." },
+        "maxDepositLimit": { "type": "number", "description": "Maximum transaction size for deposits." },
+        "minWithdrawalLimit": { "type": "number", "description": "Minimum transaction size for withdrawals." },
+        "maxWithdrawalLimit": { "type": "number", "description": "Maximum transaction size for withdrawals." },
+        "status": { "type": "string", "enum": ["Active", "Suspended"], "description": "The current status of the teller." }
+      },
+      "required": [
+        "id", "institutionId", "userId", "role", "tillAccountId", "status", "maxCashLimit", "minDepositLimit", "maxDepositLimit", "minWithdrawalLimit", "maxWithdrawalLimit", "branchId"
+      ]
+    },
+    "Customer": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Customer",
+      "type": "object",
+      "description": "Represents an individual or group customer of the institution.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the customer." },
+        "branchId": { "type": "string", "description": "The ID of the branch this customer belongs to." },
+        "accountNumber": { "type": "string", "description": "The unique system-generated account number for the customer." },
+        "accountNumber_lowercase": { "type": "string", "description": "Lowercase version of the account number for case-insensitive search." },
+        "name": { "type": "string", "description": "The full name of the customer or group." },
+        "name_lowercase": { "type": "string", "description": "The full name of the customer or group in lowercase." },
+        "kycStatus": { "type": "string", "enum": ["Verified", "Pending", "Rejected"], "description": "The status of their KYC verification." },
+        "phone": { "type": "string", "description": "The primary contact phone number." },
+        "phone_lowercase": { "type": "string", "description": "Lowercase version of the phone number for case-insensitive search." },
+        "customerType": { "type": "string", "enum": ["Individual", "Group"], "description": "The type of customer." },
+        "photoUrl": { "type": "string", "format": "uri", "description": "URL to the customer's profile photo." },
+        "firstName": { "type": "string" },
+        "middleName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "gender": { "type": "string", "enum": ["Male", "Female"] },
+        "dateOfBirth": { "type": "string", "format": "date-time" },
+        "maritalStatus": { "type": "string", "enum": ["Single", "Married", "Divorced", "Widowed"] },
+        "nationality": { "type": "string" },
+        "disabilityStatus": { "type": "string" },
+        "idType": { "type": "string" },
+        "idNumber": { "type": "string" },
+        "idNumber_lowercase": { "type": "string", "description": "Lowercase version of the ID number for case-insensitive search." },
+        "idExpiryDate": { "type": ["string", "null"], "format": "date-time" },
+        "alternatePhone": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "currentResidence": {
+          "type": "object",
+          "properties": {
+            "physicalAddress": { "type": "string" },
+            "district": { "type": "string" },
+            "area": { "type": "string" }
+          }
+        },
+        "homeVillage": {
+          "type": "object",
+          "properties": {
+            "district": { "type": "string" },
+            "traditionalAuthority": { "type": "string" },
+            "village": { "type": "string" }
+          }
+        },
+        "occupationCategory": { "type": "string" },
+        "occupationSubCategory": { "type": "string" },
+        "employerName": { "type": "string" },
+        "employerLocation": { "type": "string" },
+        "primaryIncome": { "type": "number" },
+        "secondaryIncome": { "type": "number" },
+        "monthlyExpenses": { "type": "number" },
+        "nextOfKin": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fullName": { "type": "string" },
+              "relationship": { "type": "string" },
+              "phone": { "type": "string" },
+              "workplace": { "type": "string" },
+              "residence": { "type": "string" }
+            }
+          }
+        },
+        "workmates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "fullName": { "type": "string" },
+                    "position": { "type": "string" },
+                    "contacts": { "type": "string" }
+                }
+            }
+        },
+        "isPep": { "type": "boolean" },
+        "isEmployee": {
+          "type": "boolean",
+          "description": "Indicates if this customer is also an employee for payroll purposes."
+        },
+        "employmentType": {
+            "type": "string",
+            "enum": ["Permanent", "Contract", "Casual"],
+            "description": "The employee's employment type."
+        },
+        "salaryType": {
+            "type": "string",
+            "enum": ["Monthly", "Daily", "Hourly"],
+            "description": "How the employee's salary is calculated."
+        },
+        "salary": {
+          "type": "number",
+          "description": "The gross monthly or periodic salary for the employee."
+        },
+        "taxId": { "type": "string", "description": "The employee's Taxpayer Identification Number." },
+        "pensionId": { "type": "string", "description": "The employee's Pension ID number." },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["Bank", "Mobile Money", "Cash"],
+          "description": "How the employee receives their salary."
+        },
+        "bankDetails": {
+          "type": "object",
+          "properties": {
+            "bankName": { "type": "string" },
+            "accountNumber": { "type": "string" }
+          }
+        },
+        "mobileMoneyDetails": {
+            "type": "object",
+            "properties": {
+                "provider": { "type": "string" },
+                "number": { "type": "string" }
+            }
+        },
+        "accountPurpose": { "type": "string" },
+        "numberOfDependents": { "type": "number" },
+        "yearsOfService": { "type": "number" },
+        "position": { "type": "string" },
+        "officePhone": { "type": "string" },
+        "residenceType": { "type": "string", "enum": ["Own", "Rented"] },
+        "monthlyRent": { "type": "number" },
+        "residenceStayInYears": { "type": "number" },
+        "spouseDetails": {
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "phone": { "type": "string" },
+                "workplace": { "type": "string" }
+            }
+        },
+        "groupDetails": {
+          "type": "object",
+          "properties": {
+            "formationDate": { "type": "string", "format": "date-time" },
+            "meetingFrequency": { "type": "string", "enum": ["Weekly", "Bi-Weekly", "Monthly"] },
+            "contributionAmount": { "type": "number" }
+          }
+        },
+        "groupMembers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "customerId": { "type": "string" },
+              "name": { "type": "string" },
+              "role": { "type": "string", "enum": ["Chairperson", "Secretary", "Treasurer", "Member"] }
+            },
+            "required": ["customerId", "name", "role"]
+          }
+        }
+      },
+      "required": ["id", "accountNumber", "name", "kycStatus", "phone", "customerType", "branchId"]
+    },
+    "Payroll": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Payroll",
+      "type": "object",
+      "description": "Represents a payroll run for a specific employer for a given period.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the payroll run." },
+        "employerId": { "type": "string", "description": "The ID of the employer this payroll belongs to." },
+        "period": { "type": "string", "description": "The payroll period in 'YYYY-MM' format." },
+        "status": { "type": "string", "enum": ["Draft", "Processed", "Paid"], "description": "The current status of the payroll." },
+        "totalAmount": { "type": "number", "description": "The total gross amount of the payroll run." },
+        "totalNet": { "type": "number", "description": "The total net amount to be paid out." },
+        "processedBy": { "type": "string", "description": "The ID of the user who processed the payroll." },
+        "processedAt": { "type": "string", "format": "date-time", "description": "Timestamp when the payroll was processed." }
+      },
+      "required": ["id", "employerId", "period", "status", "totalAmount"]
+    },
+    "Payslip": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Payslip",
+      "type": "object",
+      "description": "Represents an individual employee's payslip within a payroll run.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the payslip." },
+        "payrollId": { "type": "string", "description": "The ID of the payroll run this payslip belongs to." },
+        "customerId": { "type": "string", "description": "The ID of the customer (employee) this payslip is for." },
+        "grossPay": { "type": "number", "description": "The employee's gross pay for the period." },
+        "deductions": { "type": "array", "items": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "amount": { "type": "number" }
+          },
+          "required": ["name", "amount"]
+        }},
+        "netPay": { "type": "number", "description": "The final net pay after all deductions." },
+        "status": { "type": "string", "enum": ["Unpaid", "Paid"], "description": "The payment status of the payslip." }
+      },
+      "required": ["id", "payrollId", "customerId", "grossPay", "netPay", "status"]
+    },
+    "UnfinalisedApplication": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "UnfinalisedApplication",
+        "type": "object",
+        "description": "Represents a customer onboarding attempt that failed and requires manual review.",
+        "properties": {
+            "id": { "type": "string" },
+            "customerName": { "type": "string", "description": "The name of the prospective customer." },
+            "reason": { "type": "string", "description": "The reason why the onboarding failed (e.g., Duplicate ID)." },
+            "idNumber": { "type": "string", "description": "The ID number that caused the potential conflict." },
+            "dateCreated": { "type": "string", "format": "date-time" },
+            "payload": { "type": "object", "description": "The full data payload of the attempted customer creation." }
+        },
+        "required": ["id", "customerName", "reason", "idNumber", "dateCreated", "payload"]
+    },
+    "FinancialYear": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "FinancialYear",
+        "type": "object",
+        "description": "Represents a financial/accounting year for an institution.",
+        "properties": {
+            "id": { "type": "string" },
+            "yearName": { "type": "string", "description": "The name of the financial year (e.g., 'FY 2024-2025')." },
+            "startDate": { "type": "string", "format": "date-time" },
+            "endDate": { "type": "string", "format": "date-time" },
+            "status": { "type": "string", "enum": ["Open", "Closed"] },
+            "netProfitLoss": { "type": "number", "description": "The calculated net profit or loss for the year upon closing." },
+            "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "yearName", "startDate", "endDate", "status"]
+    },
+    "WorkflowAudit": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "WorkflowAudit",
+        "type": "object",
+        "description": "Logs changes to the maker-checker workflow controls.",
+        "properties": {
+            "id": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "userId": { "type": "string", "description": "UID of the user who made the change." },
+            "action": { "type": "string", "enum": ["Activated", "Deactivated"] },
+            "component": { "type": "string", "description": "The workflow component that was changed." },
+            "reason": { "type": "string", "description": "The reason provided for the change." }
+        },
+        "required": ["id", "timestamp", "userId", "action", "component", "reason"]
+    },
+    "InventoryItem": {
+        "title": "Inventory Item",
+        "type": "object",
+        "description": "Represents a single item in the inventory.",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "code": { "type": "string" },
+          "categoryId": { "type": "string" },
+          "itemType": { "type": "string", "enum": ["Consumable", "Asset", "Loanable Item"] },
+          "unitOfMeasureId": { "type": "string" },
+          "quantity": { "type": "number", "description": "Current stock quantity." },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "costPrice": { "type": "number" },
+          "sellingPrice": { "type": "number" },
+          "reorderLevel": { "type": "number" },
+          "status": { "type": "string", "enum": ["Active", "Discontinued"] },
+          "inventoryAccountId": { "type": "string" },
+          "expenseAccountId": { "type": "string" }
+        },
+        "required": ["id", "name", "code", "categoryId", "itemType", "unitOfMeasureId", "status", "quantity", "createdAt"]
+    },
+    "InventoryCategory": {
+        "title": "Inventory Category",
+        "type": "object",
+        "description": "Represents a category for organizing inventory items.",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["id", "name"]
+    },
+    "UnitOfMeasure": {
+        "title": "Unit of Measure",
+        "type": "object",
+        "description": "Defines a unit for quantifying inventory items.",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "abbreviation": { "type": "string" }
+        },
+        "required": ["id", "name", "abbreviation"]
+    },
+    "StaffAsset": {
+        "title": "Staff Asset",
+        "type": "object",
+        "description": "Represents an inventory item issued to a staff member.",
+        "properties": {
+            "id": { "type": "string" },
+            "customerId": { "type": "string", "description": "ID of the staff member (customer)." },
+            "customerName": { "type": "string" },
+            "inventoryItemId": { "type": "string" },
+            "inventoryItemName": { "type": "string" },
+            "dateIssued": { "type": "string", "format": "date-time" },
+            "dateReturned": { "type": ["string", "null"], "format": "date-time" },
+            "status": { "type": "string", "enum": ["Issued", "Returned", "Lost", "Damaged"] },
+            "notes": { "type": "string" },
+            "deductionAmount": { "type": "number" },
+            "isDeducted": { "type": "boolean" }
+        },
+        "required": ["id", "customerId", "inventoryItemId", "dateIssued", "status", "customerName", "inventoryItemName"]
+    },
+    "Supplier": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Supplier",
+      "type": "object",
+      "description": "Represents a supplier of goods and services.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the supplier." },
+        "name": { "type": "string", "description": "The official name of the supplier." },
+        "address": { "type": "string", "description": "Physical address of the supplier." },
+        "contactPerson": { "type": "string", "description": "Name of the primary contact person." },
+        "contactPhone": { "type": "string", "description": "Primary contact phone number." },
+        "contactEmail": { "type": "string", "format": "email", "description": "Primary contact email address." },
+        "tinNumber": { "type": "string", "description": "Supplier's Taxpayer Identification Number." }
+      },
+      "required": ["id", "name"]
+    },
+    "Warehouse": {
+      "title": "Warehouse",
+      "type": "object",
+      "description": "Represents a physical location where inventory is stored.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "location": { "type": "string", "description": "The physical address or city of the warehouse." },
+        "isPrimary": { "type": "boolean", "description": "Whether this is the main or primary warehouse."}
+      },
+      "required": ["id", "name", "location"]
+    },
+    "InventoryLedger": {
+      "title": "Inventory Ledger",
+      "type": "object",
+      "description": "Records all movements of an inventory item.",
+      "properties": {
+        "id": { "type": "string" },
+        "institutionId": { "type": "string" },
+        "warehouseId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "transactionType": { "type": "string", "enum": ["Purchase", "Sale", "Adjustment In", "Adjustment Out", "Transfer In", "Transfer Out"] },
+        "transactionDate": { "type": "string", "format": "date-time" },
+        "quantityChange": { "type": "number" },
+        "quantityAfter": { "type": "number" },
+        "unitCost": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "sourceDocumentId": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "institutionId", "warehouseId", "itemId", "transactionType", "transactionDate", "quantityChange", "quantityAfter", "sourceDocumentId", "createdBy"]
+    },
+    "PurchaseOrder": {
+      "title": "Purchase Order",
+      "type": "object",
+      "description": "Represents an order to a supplier for goods or services.",
+      "properties": {
+        "id": { "type": "string" },
+        "poNumber": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "warehouseId": { "type": "string" },
+        "branchId": { "type": "string" },
+        "status": { "type": "string", "enum": ["Draft", "Submitted", "Approved", "Partially Received", "Fully Received", "Closed", "Cancelled"] },
+        "orderDate": { "type": "string", "format": "date-time" },
+        "expectedDeliveryDate": { "type": "string", "format": "date-time" },
+        "totalAmount": { "type": "number" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "itemId": { "type": "string" },
+              "description": { "type": "string" },
+              "quantityOrdered": { "type": "number" },
+              "unitCost": { "type": "number" },
+              "tax": { "type": "number" },
+              "lineTotal": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["id", "poNumber", "supplierId", "warehouseId", "branchId", "status", "orderDate", "totalAmount"]
+    },
+    "GoodsReceiptNote": {
+      "title": "Goods Receipt Note",
+      "type": "object",
+      "description": "A document confirming the receipt of goods from a supplier.",
+      "properties": {
+        "id": { "type": "string" },
+        "grnNumber": { "type": "string" },
+        "poId": { "type": "string" },
+        "warehouseId": { "type": "string" },
+        "receivedDate": { "type": "string", "format": "date-time" },
+        "receivedBy": { "type": "string" },
+        "status": { "type": "string", "enum": ["Draft", "Posted"] },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "itemId": { "type": "string" },
+              "quantityReceived": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["id", "grnNumber", "poId", "warehouseId", "receivedDate", "receivedBy", "status"]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/entities/User"
+          },
+          "description": "Collection of user documents. Document ID is the user's UID."
+        }
+      },
+      {
+        "path": "/pendingUsers/{pendingUserId}",
+        "definition": {
+          "entityName": "PendingUser",
+          "schema": { "$ref": "#/entities/PendingUser" },
+          "description": "Collection of users awaiting admin approval."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}",
+        "definition": {
+          "entityName": "Institution",
+          "schema": {
+            "$ref": "#/entities/Institution"
+          },
+          "description": "Collection of financial institutions."
+        }
+      },
+       {
+        "path": "/institutions/{institutionId}/financialYears/{yearId}",
+        "definition": {
+          "entityName": "FinancialYear",
+          "schema": {
+            "$ref": "#/entities/FinancialYear"
+          },
+          "description": "Collection of financial years for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/invoices/{invoiceId}",
+        "definition": {
+          "entityName": "Invoice",
+          "schema": { "$ref": "#/entities/Invoice" },
+          "description": "Collection of monthly invoices for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/invoices/{invoiceId}/payments/{paymentId}",
+        "definition": {
+          "entityName": "Payment",
+          "schema": { "$ref": "#/entities/Payment" },
+          "description": "Collection of payments made for a specific invoice."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/savingsProducts/{productId}",
+        "definition": {
+          "entityName": "SavingsProduct",
+          "schema": { "$ref": "#/entities/SavingsProduct" },
+          "description": "Collection of savings products offered by an institution."
+        }
+      },
+       {
+        "path": "/institutions/{institutionId}/shareProducts/{productId}",
+        "definition": {
+          "entityName": "ShareProduct",
+          "schema": { "$ref": "#/entities/ShareProduct" },
+          "description": "Collection of share products offered by an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/loanProducts/{productId}",
+        "definition": {
+          "entityName": "LoanProduct",
+          "schema": { "$ref": "#/entities/LoanProduct" },
+          "description": "Collection of loan products offered by an institution."
+        }
+      },
+       {
+        "path": "/institutions/{institutionId}/employers/{employerId}",
+        "definition": {
+          "entityName": "Employer",
+          "schema": { "$ref": "#/entities/Employer" },
+          "description": "Collection of employers for an institution."
+        }
+      },
+       {
+        "path": "/institutions/{institutionId}/payrolls/{payrollId}",
+        "definition": {
+          "entityName": "Payroll",
+          "schema": { "$ref": "#/entities/Payroll" },
+          "description": "Collection of payroll runs for an institution."
+        }
+      },
+       {
+        "path": "/institutions/{institutionId}/payrolls/{payrollId}/payslips/{payslipId}",
+        "definition": {
+          "entityName": "Payslip",
+          "schema": { "$ref": "#/entities/Payslip" },
+          "description": "Sub-collection of individual payslips for a payroll run."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/fees/{feeId}",
+        "definition": {
+          "entityName": "Fee",
+          "schema": { "$ref": "#/entities/Fee" },
+          "description": "Collection of fees and charges for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/roles/{roleId}",
+        "definition": {
+          "entityName": "Role",
+          "schema": { "$ref": "#/entities/Role" },
+          "description": "Collection of custom user roles for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/tellers/{tellerId}",
+        "definition": {
+          "entityName": "Teller",
+          "schema": { "$ref": "#/entities/Teller" },
+          "description": "Collection of teller configurations for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/chartOfAccounts/{accountId}",
+        "definition": {
+          "entityName": "ChartOfAccount",
+          "schema": {
+            "$ref": "#/entities/ChartOfAccount"
+          },
+          "description": "Institution-wide General Ledger accounts."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/customers/{customerId}",
+        "definition": {
+          "entityName": "Customer",
+          "schema": { "$ref": "#/entities/Customer" },
+          "description": "Collection of all customers belonging to the institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/customers/{customerId}/savingsAccounts/{accountId}",
+        "definition": {
+          "entityName": "SavingsAccount",
+          "schema": { "$ref": "#/entities/SavingsAccount" },
+          "description": "Collection of a customer's savings accounts."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/loanApplications/{loanId}",
+        "definition": {
+          "entityName": "Loan",
+          "schema": { "$ref": "#/entities/Loan" },
+          "description": "Collection of new and pending loan applications."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/runningLoans/{loanId}",
+        "definition": {
+          "entityName": "Loan",
+          "schema": { "$ref": "#/entities/Loan" },
+          "description": "Collection of active, disbursed loans for the institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/journals/{journalId}",
+        "definition": {
+          "entityName": "JournalEntry",
+          "schema": {
+            "$ref": "#/entities/JournalEntry"
+          },
+          "description": "Collection of financial journal entries for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/unfinalisedApplications/{applicationId}",
+        "definition": {
+          "entityName": "UnfinalisedApplication",
+          "schema": { "$ref": "#/entities/UnfinalisedApplication" },
+          "description": "A queue for failed customer onboarding attempts."
+        }
+      },
+       {
+        "path": "/institutions/{institutionId}/workflowAudits/{auditId}",
+        "definition": {
+          "entityName": "WorkflowAudit",
+          "schema": { "$ref": "#/entities/WorkflowAudit" },
+          "description": "An audit log of all changes to workflow controls."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/inventoryItems/{itemId}",
+        "definition": {
+          "entityName": "InventoryItem",
+          "schema": { "$ref": "#/entities/InventoryItem" },
+          "description": "Collection of inventory items for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/inventoryCategories/{categoryId}",
+        "definition": {
+          "entityName": "InventoryCategory",
+          "schema": { "$ref": "#/entities/InventoryCategory" },
+          "description": "Collection of inventory categories for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/unitsOfMeasure/{unitId}",
+        "definition": {
+          "entityName": "UnitOfMeasure",
+          "schema": { "$ref": "#/entities/UnitOfMeasure" },
+          "description": "Collection of units of measure for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/staffAssets/{assetId}",
+        "definition": {
+          "entityName": "StaffAsset",
+          "schema": { "$ref": "#/entities/StaffAsset" },
+          "description": "A record of an asset issued to a staff member."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/suppliers/{supplierId}",
+        "definition": {
+          "entityName": "Supplier",
+          "schema": { "$ref": "#/entities/Supplier" },
+          "description": "Collection of suppliers for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/warehouses/{warehouseId}",
+        "definition": {
+            "entityName": "Warehouse",
+            "schema": { "$ref": "#/entities/Warehouse" },
+            "description": "Collection of inventory storage locations for an institution."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/inventoryLedger/{ledgerEntryId}",
+        "definition": {
+            "entityName": "InventoryLedger",
+            "schema": { "$ref": "#/entities/InventoryLedger" },
+            "description": "A ledger of all inventory transactions and movements."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/purchaseOrders/{poId}",
+        "definition": {
+            "entityName": "PurchaseOrder",
+            "schema": { "$ref": "#/entities/PurchaseOrder" },
+            "description": "Collection of purchase orders to suppliers."
+        }
+      },
+      {
+        "path": "/institutions/{institutionId}/goodsReceiptNotes/{grnId}",
+        "definition": {
+            "entityName": "GoodsReceiptNote",
+            "schema": { "$ref": "#/entities/GoodsReceiptNote" },
+            "description": "Collection of goods receipt notes confirming stock delivery."
+        }
+      }
+    ]
+  }
+}
