@@ -12,6 +12,7 @@ import {
   useFirestore,
 } from '@/firebase';
 import { collection, doc, query, where, updateDoc, Timestamp, arrayUnion, getDoc, getDocs, runTransaction, serverTimestamp, collectionGroup, limit } from 'firebase/firestore';
+import { findCustomerWithNationalId } from '@/lib/customer-identification';
 import {
   Accordion,
   AccordionContent,
@@ -56,7 +57,7 @@ function LoanApprovalPageContent() {
   const params = useParams();
   const router = useRouter();
   const loanId = params.id as string;
-  
+
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +70,7 @@ function LoanApprovalPageContent() {
   const [isDataLoading, setIsDataLoading] = useState(true);
 
   const [institutionId, setInstitutionId] = useState<string | null>(null);
-  
+
   const [allUsers, setAllUsers] = useState<any[]>([]);
 
 
@@ -103,13 +104,13 @@ function LoanApprovalPageContent() {
       }
       const loanData = { id: loanSnap.id, ...loanSnap.data() };
       setLoan(loanData);
-      
+
       try {
         const customerDocRef = doc(firestore, 'institutions', institutionId, 'customers', loanData.customerId);
         const productDocRef = doc(firestore, 'institutions', institutionId, 'loanProducts', loanData.loanProductId);
-        
+
         const officerUserId = loanData.appraisedBy || loanData.reversalRequestedBy || loanData.writeOffRequestedBy;
-        
+
         const usersQuery = query(collection(firestore, 'users'), where('institutionId', '==', institutionId));
         const feesQuery = query(collection(firestore, 'institutions', institutionId, 'fees'));
         const savingsQuery = query(collection(firestore, `institutions/${institutionId}/customers/${loanData.customerId}/savingsAccounts`), where('status', '==', 'Active'), limit(1));
@@ -152,7 +153,7 @@ function LoanApprovalPageContent() {
       firstRepaymentDate: undefined,
     }
   });
-  
+
   const getFeeAmount = (fee: any, principal: number) => {
     if (fee.calculationMethod === 'Flat Amount') return fee.amount;
     if (fee.calculationMethod === 'Percentage' && fee.percentage && fee.percentageOf) {
@@ -177,7 +178,7 @@ function LoanApprovalPageContent() {
 
   const totalDeductedFees = feesDeducted.reduce((sum, fee) => sum + getFeeAmount(fee, loan?.amount || 0), 0);
   const totalCapitalizedFees = feesCapitalized.reduce((sum, fee) => sum + getFeeAmount(fee, loan?.amount || 0), 0);
-  
+
   const finalPrincipal = (loan?.amount || 0) + totalCapitalizedFees;
   const netDisbursement = loan?.isTopUp
     ? (loan.topUpDetails.topUpAmount || 0) - totalDeductedFees
@@ -189,7 +190,7 @@ function LoanApprovalPageContent() {
       return { schedule: [], totalInterest: 0, totalPayment: 0, monthlyInstallment: 0 };
     }
     return calculateAmortization({
-      principal: finalPrincipal, 
+      principal: finalPrincipal,
       term: loan.term,
       tenureUnit: loan.tenureUnit || 'Months',
       interestRateType: loanProduct.interestRateType,
@@ -201,7 +202,7 @@ function LoanApprovalPageContent() {
 
   async function handleDecision(decision: 'Approved' | 'Rejected' | 'Reversed' | 'Written-Off' | 'Rescheduled') {
     if (!loan || !user || !institutionId || !loanProduct) return;
-    
+
     let loanDocRef;
     if (loan.status === 'Reversal Pending') {
       const runningLoanRef = doc(firestore, 'institutions', institutionId, 'runningLoans', loan.id);
@@ -220,21 +221,25 @@ function LoanApprovalPageContent() {
         const isValid = await form.trigger();
         if (!isValid) return;
     }
-    
+
     const { firstRepaymentDate } = form.getValues();
 
     setLoading(decision);
     try {
+        const customerSnapshot = await getDoc(doc(firestore, 'institutions', institutionId, 'customers', loan.customerId));
+        if (customerSnapshot.exists() && await findCustomerWithNationalId(firestore, institutionId, customerSnapshot.data().idNumber, loan.customerId)) {
+            throw new Error('This loan cannot be edited while the customer has a duplicate national ID. Resolve it in KYC Alerts first.');
+        }
         const institutionDocRef = doc(firestore, 'institutions', institutionId);
-        
+
         await runTransaction(firestore, async(transaction) => {
             const instDoc = await transaction.get(institutionDocRef);
             if (!instDoc.exists()) throw "Institution not found";
-            
+
             const journalBatchCounter = instDoc.data().journalBatchCounter || 0;
             let currentJournalCounter = journalBatchCounter;
             const journalsRef = collection(firestore, 'institutions', institutionId, 'journals');
-            
+
             if (decision === 'Rescheduled') {
                 const { newTerm, newInterestRate } = loan.rescheduleDetails;
                 transaction.update(loanDocRef, {
@@ -252,25 +257,25 @@ function LoanApprovalPageContent() {
                 });
                 return;
             }
-            
+
             if (decision === 'Reversed') {
                 const disbursementJournalQuery = query(journalsRef, where('loanId', '==', loan.id), limit(1));
                 const disbursementJournals = await getDocs(disbursementJournalQuery);
-                
+
                 if (disbursementJournals.empty) throw new Error("Original disbursement transaction not found for this loan.");
 
                 const disbursementJournal = disbursementJournals.docs[0].data();
                 const disbursementJournalId = disbursementJournals.docs[0].id;
-                
+
                 const reversalTransactions = disbursementJournal.transactions.map((t: any) => ({
                     accountId: t.accountId,
                     debit: t.credit || 0,
                     credit: t.debit || 0,
                 }));
-                
+
                 const reversalBatchId = `bat${String(++currentJournalCounter).padStart(7, '0')}`;
                 const reversalJournalRef = doc(journalsRef, reversalBatchId);
-                
+
                 transaction.set(reversalJournalRef, {
                     id: reversalBatchId,
                     institutionId,
@@ -284,7 +289,7 @@ function LoanApprovalPageContent() {
                     createdAt: serverTimestamp(),
                 });
             }
-            
+
             else if (decision === 'Written-Off') {
                 const writeOffBatchId = `bat${String(++currentJournalCounter).padStart(7, '0')}`;
                 const writeOffJournalRef = doc(journalsRef, writeOffBatchId);
@@ -311,13 +316,13 @@ function LoanApprovalPageContent() {
                 collectionMethod: fee.collectionMethod,
                 incomeAccountId: fee.incomeAccountId
             }));
-            
+
             transaction.update(loanDocRef, {
                 status: decision,
                 outstandingPrincipal: decision === 'Reversed' || decision === 'Written-Off' ? 0 : loan.outstandingPrincipal,
                 approvedBy: user.uid,
                 approvalDate: new Date(),
-                ...(decision === 'Approved' && { 
+                ...(decision === 'Approved' && {
                     firstRepaymentDate: Timestamp.fromDate(firstRepaymentDate),
                     amount: finalPrincipal,
                     outstandingPrincipal: finalPrincipal,
@@ -336,7 +341,7 @@ function LoanApprovalPageContent() {
                 transaction.update(institutionDocRef, { journalBatchCounter: currentJournalCounter });
             }
         });
-        
+
         toast({
             title: `Loan ${decision}`,
             description: `The loan has been successfully ${decision.toLowerCase()}.`,
@@ -360,6 +365,10 @@ function LoanApprovalPageContent() {
     const loanDocRef = doc(firestore, 'institutions', institutionId, 'loanApplications', loanId);
 
     try {
+        const customerSnapshot = await getDoc(doc(firestore, 'institutions', institutionId, 'customers', loan.customerId));
+        if (customerSnapshot.exists() && await findCustomerWithNationalId(firestore, institutionId, customerSnapshot.data().idNumber, loan.customerId)) {
+            throw new Error('This loan cannot be edited while the customer has a duplicate national ID. Resolve it in KYC Alerts first.');
+        }
         await updateDoc(loanDocRef, {
             status: 'Appraisal',
             approvedBy: null,
@@ -375,18 +384,18 @@ function LoanApprovalPageContent() {
         router.push('/staff/loans/all-applications');
     } catch (e) {
         console.error(e);
-        toast({ variant: 'destructive', title: 'Error', description: 'Failed to send the loan back.' });
+        toast({ variant: 'destructive', title: 'Error', description: e instanceof Error ? e.message : 'Failed to send the loan back.' });
     } finally {
         setLoading(null);
     }
   }
-  
+
   const getUserName = (userId: string) => allUsers.find(u => u.uid === userId)?.name || '...';
-  
+
   if (isDataLoading) {
     return <div className="space-y-6"><Skeleton className="h-12 w-1/4" /><Skeleton className="h-96 w-full" /></div>
   }
-  
+
   if (error || !loan) {
       return (
         <Card className="text-center max-w-lg mx-auto">
@@ -400,7 +409,7 @@ function LoanApprovalPageContent() {
         </Card>
       )
   }
-  
+
   const getAge = (dob: any) => {
     if (!dob) return 'N/A';
     return differenceInYears(new Date(), dob.toDate()).toString();
@@ -456,7 +465,7 @@ function LoanApprovalPageContent() {
                             <div><p className="font-medium text-muted-foreground">ID Type</p><p>{customer?.idType}</p></div>
                             <div><p className="font-medium text-muted-foreground">ID Number</p><p>{customer?.idNumber}</p></div>
                         </div>
-                        
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
                             <div className="font-medium text-muted-foreground col-span-full border-b pb-2">Address Details</div>
                              <div>
@@ -476,7 +485,7 @@ function LoanApprovalPageContent() {
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-sm">
                             <div className="font-medium text-muted-foreground col-span-full border-b pb-2">Financial Profile</div>
                             <div><p className="font-medium text-muted-foreground">Occupation</p><p>{customer?.occupationCategory}</p></div>
@@ -517,7 +526,7 @@ function LoanApprovalPageContent() {
                                 )}
                             </div>
                         )}
-                        
+
                     </CardContent>
                 </Card>
               </AccordionContent>
@@ -792,6 +801,6 @@ export default function LoanApprovalWrapperPage() {
         </Suspense>
     )
 }
-    
 
-    
+
+

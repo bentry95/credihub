@@ -49,11 +49,13 @@ import {
 import { collection, doc, query, getDocs } from 'firebase/firestore';
 import { useBranch } from '@/context/BranchContext';
 import { useMemo, useEffect, useState } from 'react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function AllCustomersPage() {
   const { user } = useUser();
   const firestore = useFirestore();
-  const { selectedBranch, availableBranches, loading: branchLoading } = useBranch();
+  const { selectedBranch, setSelectedBranch, availableBranches, loading: branchLoading } = useBranch();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -64,7 +66,7 @@ export default function AllCustomersPage() {
 
   const institutionId = userData?.institutionId;
   
-  const { data: allCustomers, isLoading: isCustomersLoading } = useCollection(
+  const { data: allCustomers, isLoading: isCustomersLoading, error: customersError } = useCollection(
     useMemoFirebase(() => (firestore && institutionId ? collection(firestore, 'institutions', institutionId, 'customers') : null), [firestore, institutionId])
   );
   
@@ -75,7 +77,15 @@ export default function AllCustomersPage() {
     if (selectedBranch === 'all') {
       customersByBranch = allCustomers;
     } else {
-      customersByBranch = allCustomers.filter(customer => customer.branchId === selectedBranch);
+      const activeBranch = availableBranches.find(branch => branch.id === selectedBranch);
+      const selectedBranchIds = new Set(
+        [selectedBranch, activeBranch?.id, activeBranch?.code]
+          .filter((branchId): branchId is string => Boolean(branchId))
+          .map(branchId => branchId.trim().toLowerCase())
+      );
+      customersByBranch = allCustomers.filter(customer =>
+        selectedBranchIds.has(String(customer.branchId ?? '').trim().toLowerCase())
+      );
     }
 
     if (!searchTerm) {
@@ -89,7 +99,7 @@ export default function AllCustomersPage() {
         customer.phone?.toLowerCase().includes(lowercasedFilter)
     );
 
-  }, [allCustomers, selectedBranch, searchTerm]);
+  }, [allCustomers, selectedBranch, availableBranches, searchTerm]);
 
   const isFiltered = searchTerm.length > 0 || selectedBranch !== 'all';
   
@@ -116,7 +126,7 @@ export default function AllCustomersPage() {
   
   const getBranchName = (branchId: string) => {
       if(!availableBranches || availableBranches.length === 0) return `Branch ${branchId}`;
-      const branch = availableBranches.find((b:any) => b.id === branchId);
+      const branch = availableBranches.find((b:any) => b.id === branchId || b.code === branchId);
       return branch?.name || `Branch ${branchId}`;
   }
   
@@ -129,13 +139,37 @@ export default function AllCustomersPage() {
           <h1 className="text-3xl font-bold tracking-tight">All Customers</h1>
           <p className="text-muted-foreground mt-1">
             The master list of every customer registered with your institution.
+            {selectedBranch !== 'all' && ` Currently viewing ${availableBranches.find(branch => branch.id === selectedBranch)?.name || `branch ${selectedBranch}`}.`}
           </p>
         </div>
-        <Button variant="outline">
-          <Download className="mr-2 h-4 w-4" />
-          Export to Excel
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          {availableBranches.length > 1 && selectedBranch && (
+            <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+              <SelectTrigger className="w-52" aria-label="Filter customers by branch">
+                <SelectValue placeholder="Select branch" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableBranches.map(branch => (
+                  <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            Export to Excel
+          </Button>
+        </div>
       </div>
+
+      {customersError && (
+        <Alert variant="destructive">
+          <AlertTitle>Could not load customers</AlertTitle>
+          <AlertDescription>
+            {customersError.message} Check that your account has access to this institution&apos;s customer records, then refresh the page.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader>

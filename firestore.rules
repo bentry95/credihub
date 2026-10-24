@@ -76,6 +76,14 @@ service cloud.firestore {
         match /savingsAccounts/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
         match /shareAccounts/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
       }
+
+      match /customerNationalIds/{nationalIdKey} {
+        allow read: if isStaff(institutionId) || isPlatformAdmin();
+        allow create: if (isStaff(institutionId) || isPlatformAdmin()) &&
+          !exists(/databases/$(database)/documents/institutions/$(institutionId)/customerNationalIds/$(nationalIdKey));
+        allow update: if false;
+        allow delete: if isStaff(institutionId) || isPlatformAdmin();
+      }
       
       match /loanApplications/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
       match /runningLoans/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }

@@ -10,7 +10,7 @@ import { usePathname, useRouter } from 'next/navigation';
 interface BranchContextType {
   selectedBranch: string | null;
   setSelectedBranch: (branchId: string) => void;
-  availableBranches: { id: string; name: string }[];
+  availableBranches: { id: string; name: string; code?: string }[];
   loading: boolean;
 }
 

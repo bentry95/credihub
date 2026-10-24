@@ -19,7 +19,7 @@ import {
   useMemoFirebase,
   useDoc,
 } from '@/firebase';
-import { collection, doc, writeBatch, runTransaction, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
+import { collection, doc, writeBatch, runTransaction, serverTimestamp, query, where, setDoc, getDocs } from 'firebase/firestore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Papa from 'papaparse';
@@ -27,6 +27,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useBranch } from '@/context/BranchContext';
 import { Input } from '@/components/ui/input';
+import { customerNationalIdIndexRef, nationalIdIndexKey, normalizeNationalId } from '@/lib/customer-identification';
 
 const loanProductHeaders = [
     "name", "description", "status", "loanType", "minAmount", "maxAmount",
@@ -79,7 +80,7 @@ export default function BulkUploadPage() {
     const [isSaving, setIsSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [selectedSavingsProduct, setSelectedSavingsProduct] = useState<string | null>(null);
-    const { selectedBranch } = useBranch();
+    const { availableBranches } = useBranch();
 
 
     const userDocRef = useMemoFirebase(
@@ -120,25 +121,20 @@ export default function BulkUploadPage() {
 
 
     const handleDownload = (headers: string[], filename: string) => {
-        let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += headers.join(",") + "\n";
-        
-        const exampleRow = new Array(headers.length).fill('');
-        
-        if (filename.includes('customer_upload_template') || filename.includes('loan_products_template')) {
-            const instCodeIndex = headers.indexOf("institutionCode");
-            const branchCodeIndex = headers.indexOf("branchId");
-            
-            if (instCodeIndex !== -1 && userData?.institutionId) {
-                // This property doesn't exist on the schema, so we can't pre-fill it.
-            }
-             if (branchCodeIndex !== -1 && selectedBranch) {
-                exampleRow[branchCodeIndex] = selectedBranch;
-            }
+        let csvContent = `${headers.join(",")}\n`;
+        if (filename.includes('customer_upload_template')) {
+            const branchIndex = headers.indexOf('branchId');
+            const branches = [...availableBranches].sort((a, b) => (a.code || a.id).localeCompare(b.code || b.id));
+            branches.forEach(branch => {
+                const row = new Array(headers.length).fill('');
+                if (branchIndex !== -1) row[branchIndex] = branch.code || branch.id;
+                csvContent += `${row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')}\n`;
+            });
+        } else {
+          const exampleRow = new Array(headers.length).fill('');
+          csvContent += `${exampleRow.join(",")}\n`;
         }
-
-        csvContent += exampleRow.join(",") + "\n";
-        const encodedUri = encodeURI(csvContent);
+        const encodedUri = `data:text/csv;charset=utf-8,${encodeURIComponent(csvContent)}`;
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
         link.setAttribute("download", filename);
@@ -179,7 +175,10 @@ export default function BulkUploadPage() {
                     if (validationErrors.length > 0) {
                         setUploadErrors(validationErrors);
                     } else {
-                        setUploadedData(results.data);
+                        const rows = results.data as any[];
+                        setUploadedData(uploadType === 'customers'
+                            ? rows.filter(row => [row.firstName, row.lastName, row.idNumber, row.phone].some(value => String(value || '').trim()))
+                            : rows);
                     }
                     setIsUploading(false);
                 },
@@ -272,20 +271,53 @@ export default function BulkUploadPage() {
 
         setIsSaving(true);
         const institutionRef = doc(firestore, 'institutions', userData.institutionId);
+        const customersRef = collection(firestore, 'institutions', userData.institutionId, 'customers');
 
         let onboardingFee = 0;
         
         try {
+            const seenNationalIds = new Set<string>();
+            for (const [index, row] of uploadedData.entries()) {
+                const nationalId = normalizeNationalId(row.idNumber);
+                if (!nationalId) {
+                    throw new Error(`Row ${index + 2} is missing a national ID.`);
+                }
+                if (seenNationalIds.has(nationalId)) {
+                    throw new Error(`National ID ${row.idNumber} is repeated in the uploaded file.`);
+                }
+                seenNationalIds.add(nationalId);
+            }
+
+            // Check existing records too, including older records without a reservation document.
+            const existingCustomers = await getDocs(customersRef);
+            const existingNationalIds = new Set(
+                existingCustomers.docs
+                    .map(customerDoc => normalizeNationalId(customerDoc.data().idNumber))
+                    .filter(Boolean)
+            );
+            const alreadyRegisteredId = [...seenNationalIds].find(id => existingNationalIds.has(id));
+            if (alreadyRegisteredId) {
+                throw new Error(`National ID ${alreadyRegisteredId} is already registered.`);
+            }
+
             await runTransaction(firestore, async (transaction) => {
                 const instDoc = await transaction.get(institutionRef);
                 if (!instDoc.exists()) {
                     throw "Institution not found!";
                 }
+
+                const idIndexRefs = uploadedData.map(row =>
+                    customerNationalIdIndexRef(firestore, userData.institutionId, row.idNumber)
+                );
+                const idIndexSnapshots = await Promise.all(idIndexRefs.map(ref => transaction.get(ref)));
+                if (idIndexSnapshots.some(snapshot => snapshot.exists())) {
+                    throw new Error('One or more national IDs were registered while this upload was being prepared. Refresh and try again.');
+                }
                 
                 let customerCounter = instDoc.data().customerCounter || 0;
                 const shortName = instDoc.data().shortName || "INST";
                 
-                for (const row of uploadedData) {
+                for (const [rowIndex, row] of uploadedData.entries()) {
                     const product = savingsProducts?.find(p => p.id === row.savingsProductId);
                     if (product && product.charges && fees) {
                         product.charges.forEach((chargeId: string) => {
@@ -302,7 +334,8 @@ export default function BulkUploadPage() {
                     const newAccountNumber = `${shortName}CUS${String(customerCounter).padStart(6, '0')}`;
                     const fullName = `${row['firstName']} ${row['lastName']}`;
                     
-                    const newCustomerRef = doc(collection(firestore, 'institutions', userData.institutionId, 'customers'), newAccountNumber);
+                    const newCustomerRef = doc(customersRef, newAccountNumber);
+                    const normalizedNationalId = normalizeNationalId(row.idNumber);
                     const customerData = {
                         id: newCustomerRef.id,
                         institutionId: userData.institutionId,
@@ -313,8 +346,9 @@ export default function BulkUploadPage() {
                         lastName: row['lastName'],
                         middleName: row['middleName'] || '',
                         idType: row['idType'] || 'National ID',
-                        idNumber: row['idNumber'],
-                        idNumber_lowercase: row['idNumber'].toLowerCase(),
+                        idNumber: String(row['idNumber']).trim(),
+                        idNumber_lowercase: normalizedNationalId,
+                        idNumberKey: nationalIdIndexKey(normalizedNationalId),
                         dateOfBirth: row['dateOfBirth'] ? new Date(row['dateOfBirth']) : null,
                         gender: row['gender'] || '',
                         maritalStatus: row['maritalStatus'] || '',
@@ -350,6 +384,11 @@ export default function BulkUploadPage() {
                         createdAt: serverTimestamp(),
                     };
                     transaction.set(newCustomerRef, customerData);
+                    transaction.set(idIndexRefs[rowIndex], {
+                        customerId: newCustomerRef.id,
+                        idNumber: customerData.idNumber,
+                        createdAt: serverTimestamp(),
+                    });
 
                     const newSavingsAccountRef = doc(collection(newCustomerRef, 'savingsAccounts'));
                     const savingsAccountData = {
@@ -376,7 +415,7 @@ export default function BulkUploadPage() {
             toast({
                 variant: 'destructive',
                 title: 'Upload Failed',
-                description: 'An error occurred while saving the customers. Please check the data and try again.'
+                description: error instanceof Error ? error.message : 'An error occurred while saving the customers. Please check the data and try again.'
             });
         } finally {
             setIsSaving(false);
@@ -539,7 +578,14 @@ export default function BulkUploadPage() {
                                     <TableCell><Input value={row['lastName']} onChange={(e) => handleDataChange(index, 'lastName', e.target.value)} /></TableCell>
                                     <TableCell><Input value={row['idNumber']} onChange={(e) => handleDataChange(index, 'idNumber', e.target.value)} /></TableCell>
                                     <TableCell><Input value={row['phone']} onChange={(e) => handleDataChange(index, 'phone', e.target.value)} /></TableCell>
-                                    <TableCell><Input value={row['branchId']} onChange={(e) => handleDataChange(index, 'branchId', e.target.value)} /></TableCell>
+                                    <TableCell>
+                                        <Select value={row['branchId'] || undefined} onValueChange={(value) => handleDataChange(index, 'branchId', value)}>
+                                            <SelectTrigger><SelectValue placeholder="Select branch..." /></SelectTrigger>
+                                            <SelectContent>
+                                                {availableBranches.map(branch => <SelectItem key={branch.id} value={branch.code || branch.id}>{branch.name} ({branch.code || branch.id})</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </TableCell>
                                     <TableCell>
                                         <Select
                                             onValueChange={(value) => handleDataChange(index, 'savingsProductId', value)}

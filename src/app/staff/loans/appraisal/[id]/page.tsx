@@ -36,6 +36,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Loader2, CheckCircle, XCircle, BarChart, Info, Scale, ArrowLeft, ShieldCheck, Users, Paperclip, ExternalLink, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { findCustomerWithNationalId } from '@/lib/customer-identification';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -145,6 +146,10 @@ function AppraisalPageContent() {
     setLoading('SendBack');
     const loanDocRef = doc(firestore, 'institutions', institutionId, 'loanApplications', loanId);
     try {
+        const customerSnapshot = await getDoc(doc(firestore, 'institutions', institutionId, 'customers', loan.customerId));
+        if (customerSnapshot.exists() && await findCustomerWithNationalId(firestore, institutionId, customerSnapshot.data().idNumber, loan.customerId)) {
+            throw new Error('This loan cannot be edited while the customer has a duplicate national ID. Resolve it in KYC Alerts first.');
+        }
         await updateDoc(loanDocRef, {
             status: 'Application',
             appraisedBy: null,
@@ -159,7 +164,7 @@ function AppraisalPageContent() {
         router.push('/staff/loans/all-applications');
     } catch (e) {
         console.error(e);
-        toast({ variant: 'destructive', title: 'Error', description: 'Failed to send the loan back.' });
+        toast({ variant: 'destructive', title: 'Error', description: e instanceof Error ? e.message : 'Failed to send the loan back.' });
     } finally {
         setLoading(null);
     }
@@ -184,6 +189,10 @@ function AppraisalPageContent() {
     const loanDocRef = doc(firestore, 'institutions', institutionId, 'loanApplications', loanId);
 
     try {
+        const customerSnapshot = await getDoc(doc(firestore, 'institutions', institutionId, 'customers', loan.customerId));
+        if (customerSnapshot.exists() && await findCustomerWithNationalId(firestore, institutionId, customerSnapshot.data().idNumber, loan.customerId)) {
+            throw new Error('This loan cannot be edited while the customer has a duplicate national ID. Resolve it in KYC Alerts first.');
+        }
         const newStatus = decision === 'Recommend' ? 'Pending Approval' : 'Rejected';
         await updateDoc(loanDocRef, {
             status: newStatus,
@@ -209,7 +218,7 @@ function AppraisalPageContent() {
         toast({
             variant: "destructive",
             title: "Error",
-            description: "Failed to update loan status. Please try again.",
+            description: e instanceof Error ? e.message : "Failed to update loan status. Please try again.",
         });
     } finally {
         setLoading(null);

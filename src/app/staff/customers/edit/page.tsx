@@ -13,7 +13,7 @@ import {
   useStorage,
   useCollection,
 } from '@/firebase';
-import { collection, doc, updateDoc, query, where, getDocs, limit, getDoc } from 'firebase/firestore';
+import { collection, doc, runTransaction, serverTimestamp, query, where, getDocs, limit, getDoc } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -76,6 +76,7 @@ import {
 import Image from 'next/image';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { countries } from '@/lib/countries';
+import { customerNationalIdIndexRef, findCustomerWithNationalId, nationalIdIndexKey, normalizeNationalId } from '@/lib/customer-identification';
 
 const malawiDistricts = [
     "Balaka", "Blantyre", "Chikwawa", "Chiradzulu", "Chitipa",
@@ -340,6 +341,22 @@ function EditCustomerPageContent() {
     setLoading(true);
     setError(null);
     try {
+        const normalizedNationalId = normalizeNationalId(values.idNumber);
+        const existingCustomer = await findCustomerWithNationalId(
+          firestore,
+          institutionId,
+          values.idNumber,
+          selectedCustomer.id
+        );
+        if (existingCustomer) {
+          throw new Error(`National ID ${values.idNumber.trim()} is already registered to another customer.`);
+        }
+
+        const nationalIdIndexRef = customerNationalIdIndexRef(firestore, institutionId, values.idNumber);
+        const previousNationalId = normalizeNationalId(selectedCustomer.idNumber);
+        const previousIdIndexRef = previousNationalId
+          ? customerNationalIdIndexRef(firestore, institutionId, selectedCustomer.idNumber)
+          : null;
         let finalPhotoUrl = selectedCustomer.photoUrl || '';
         if (photoPreview && photoPreview.startsWith('data:')) {
           const photoRef = ref(storage, `institutions/${institutionId}/customers/${selectedCustomer.id}/photo`);
@@ -350,14 +367,43 @@ function EditCustomerPageContent() {
         const customerDocRef = doc(firestore, 'institutions', institutionId, 'customers', selectedCustomer.id);
         const updatedCustomer = {
             ...values,
+            idNumber: values.idNumber.trim(),
             photoUrl: finalPhotoUrl,
             idExpiryDate: values.idExpiryDate || null,
             name: `${values.firstName} ${values.lastName}`,
             name_lowercase: `${values.firstName} ${values.lastName}`.toLowerCase(),
-            idNumber_lowercase: values.idNumber.toLowerCase(),
+            idNumber_lowercase: normalizedNationalId,
+            idNumberKey: nationalIdIndexKey(normalizedNationalId),
             phone_lowercase: values.phone.toLowerCase(),
         };
-        await updateDoc(customerDocRef, updatedCustomer);
+        await runTransaction(firestore, async (transaction) => {
+          const newIndexSnapshot = await transaction.get(nationalIdIndexRef);
+          const previousIndexSnapshot = !previousIdIndexRef || nationalIdIndexRef.path === previousIdIndexRef.path
+            ? newIndexSnapshot
+            : await transaction.get(previousIdIndexRef);
+
+          if (newIndexSnapshot.exists() && newIndexSnapshot.data().customerId !== selectedCustomer.id) {
+            throw new Error(`National ID ${values.idNumber.trim()} is already registered.`);
+          }
+
+          transaction.update(customerDocRef, updatedCustomer);
+          if (!newIndexSnapshot.exists()) {
+            transaction.set(nationalIdIndexRef, {
+              customerId: selectedCustomer.id,
+              idNumber: updatedCustomer.idNumber,
+              createdAt: serverTimestamp(),
+            });
+          }
+
+          if (
+            previousNationalId !== normalizedNationalId &&
+            previousIdIndexRef &&
+            previousIndexSnapshot.exists() &&
+            previousIndexSnapshot.data().customerId === selectedCustomer.id
+          ) {
+            transaction.delete(previousIdIndexRef);
+          }
+        });
         toast({
             title: "Customer Updated",
             description: `Successfully updated customer ${updatedCustomer.name}.`,
@@ -366,7 +412,7 @@ function EditCustomerPageContent() {
 
     } catch (e) {
         console.error("Error updating customer: ", e);
-        setError("Failed to update customer. Please check the details and try again.");
+        setError(e instanceof Error ? e.message : "Failed to update customer. Please check the details and try again.");
     } finally {
         setLoading(false);
     }

@@ -31,8 +31,9 @@ import {
 } from '@/firebase';
 import { collection, doc } from 'firebase/firestore';
 import { format, differenceInDays, addDays } from 'date-fns';
+import { normalizeNationalId } from '@/lib/customer-identification';
 
-type AlertType = 'Expired' | 'Expiring Soon' | 'Missing Info';
+type AlertType = 'Expired' | 'Expiring Soon' | 'Missing Info' | 'Duplicate ID';
 
 interface KycAlert {
   customer: any;
@@ -71,6 +72,20 @@ export default function KycAlertsPage() {
     const today = new Date();
     const thirtyDaysFromNow = addDays(today, 30);
 
+    const customersByNationalId = new Map<string, any[]>();
+    customers.forEach(customer => {
+      const nationalId = normalizeNationalId(customer.idNumber);
+      if (!nationalId) return;
+      customersByNationalId.set(nationalId, [...(customersByNationalId.get(nationalId) || []), customer]);
+    });
+    customersByNationalId.forEach(duplicates => {
+      if (duplicates.length < 2) return;
+      duplicates.forEach(customer => {
+        const otherNames = duplicates.filter(other => other.id !== customer.id).map(other => other.name || other.id).join(', ');
+        alerts.push({ customer, type: 'Duplicate ID', details: `National ID ${customer.idNumber} is also used by: ${otherNames}.` });
+      });
+    });
+
     customers.forEach(customer => {
       if (!customer.idType || !customer.idNumber) {
         alerts.push({
@@ -106,6 +121,7 @@ export default function KycAlertsPage() {
       case 'Expired': return 'destructive';
       case 'Expiring Soon': return 'secondary';
       case 'Missing Info': return 'outline';
+      case 'Duplicate ID': return 'destructive';
       default: return 'outline';
     }
   };
@@ -120,6 +136,7 @@ export default function KycAlertsPage() {
     { value: 'expired', label: 'ID Expired', alerts: filteredAlerts('Expired') },
     { value: 'expiring', label: 'ID Expiring Soon', alerts: filteredAlerts('Expiring Soon') },
     { value: 'missing', label: 'Missing Info', alerts: filteredAlerts('Missing Info') },
+    { value: 'duplicate', label: 'Duplicate National IDs', alerts: filteredAlerts('Duplicate ID') },
   ];
 
   return (

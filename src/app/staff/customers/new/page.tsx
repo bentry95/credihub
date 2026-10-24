@@ -80,6 +80,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { countries } from '@/lib/countries';
+import { customerNationalIdIndexRef, findCustomerWithNationalId, nationalIdIndexKey, normalizeNationalId } from '@/lib/customer-identification';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -516,9 +517,21 @@ function AddNewCustomerContent() {
     setError(null);
   
     try {
+      const normalizedNationalId = normalizeNationalId(values.idNumber);
+      const existingCustomer = await findCustomerWithNationalId(firestore, institutionId, values.idNumber);
+      if (existingCustomer) {
+        throw new Error(`National ID ${values.idNumber.trim()} is already registered to customer ${existingCustomer.id}.`);
+      }
+
+      const nationalIdIndexRef = customerNationalIdIndexRef(firestore, institutionId, values.idNumber);
       await runTransaction(firestore, async (transaction) => {
         const instDoc = await transaction.get(institutionDocRef);
         if (!instDoc.exists()) throw "Institution not found!";
+
+        const nationalIdIndexSnap = await transaction.get(nationalIdIndexRef);
+        if (nationalIdIndexSnap.exists()) {
+          throw new Error(`National ID ${values.idNumber.trim()} is already registered.`);
+        }
   
         const institution = instDoc.data();
         const currentCounter = institution.customerCounter || 0;
@@ -543,6 +556,7 @@ function AddNewCustomerContent() {
   
         const newCustomer = {
             ...values,
+            idNumber: values.idNumber.trim(),
             photoUrl: photoDownloadUrl,
             id: newCustomerDocRef.id,
             institutionId: institutionId,
@@ -550,7 +564,8 @@ function AddNewCustomerContent() {
             name_lowercase: fullName.toLowerCase(),
             accountNumber,
             accountNumber_lowercase: accountNumber.toLowerCase(),
-            idNumber_lowercase: values.idNumber.toLowerCase(),
+            idNumber_lowercase: normalizedNationalId,
+            idNumberKey: nationalIdIndexKey(normalizedNationalId),
             phone_lowercase: values.phone.toLowerCase(),
             kycStatus: 'Verified',
             customerType: 'Individual',
@@ -558,6 +573,11 @@ function AddNewCustomerContent() {
         };
   
         transaction.set(newCustomerDocRef, newCustomer);
+        transaction.set(nationalIdIndexRef, {
+          customerId: newCustomerDocRef.id,
+          idNumber: newCustomer.idNumber,
+          createdAt: serverTimestamp(),
+        });
         transaction.update(institutionDocRef, { customerCounter: newCounter });
   
         const savingsAccountRef = doc(collection(newCustomerDocRef, 'savingsAccounts'));
@@ -588,7 +608,7 @@ function AddNewCustomerContent() {
   
     } catch (e) {
       console.error("Error creating customer: ", e);
-      setError("Failed to create customer. Check details and try again.");
+      setError(e instanceof Error ? e.message : "Failed to create customer. Check details and try again.");
     } finally {
       setLoading(false);
     }

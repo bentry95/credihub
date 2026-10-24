@@ -72,6 +72,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { findCustomerWithNationalId } from '@/lib/customer-identification';
 
 const MAX_STEPS = 4;
 
@@ -384,6 +385,11 @@ function LoanOriginationContent() {
     setIsSubmitting(true);
   
     try {
+        const customerSnapshot = await getDoc(doc(firestore, 'institutions', institutionId, 'customers', values.customerId));
+        if (!customerSnapshot.exists()) throw new Error('The selected customer no longer exists.');
+        const customerData = customerSnapshot.data();
+        const duplicate = await findCustomerWithNationalId(firestore, institutionId, customerData.idNumber, values.customerId);
+        if (duplicate) throw new Error(`Loan applications are blocked: this national ID is also used by customer ${duplicate.id}. Resolve the duplicate ID in KYC Alerts first.`);
         await runTransaction(firestore, async (transaction) => {
             const instDoc = await transaction.get(institutionDocRef);
             if (!instDoc.exists()) {
@@ -492,7 +498,7 @@ function LoanOriginationContent() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to submit application.',
+        description: e instanceof Error ? e.message : 'Failed to submit application.',
       });
     } finally {
       setIsSubmitting(false);

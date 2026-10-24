@@ -219,10 +219,10 @@ const tellerSubMenus = {
     ],
 }
 
-const CollapsibleSidebarItem = ({ item }: { item: any }) => {
-    const [isOpen, setIsOpen] = useState(false);
+const CollapsibleSidebarItem = ({ item, path, openPath, setOpenPath }: { item: any; path: string[]; openPath: string[]; setOpenPath: (path: string[]) => void }) => {
+    const isOpen = openPath.length >= path.length && path.every((part, index) => openPath[index] === part);
     return (
-        <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <Collapsible open={isOpen} onOpenChange={(open) => setOpenPath(open ? path : openPath.slice(0, path.length - 1))}>
             <CollapsibleTrigger asChild>
                 <div className="flex items-center justify-between w-full cursor-pointer">
                     <SidebarMenuButton className="w-full justify-start pointer-events-none">
@@ -235,7 +235,7 @@ const CollapsibleSidebarItem = ({ item }: { item: any }) => {
             <CollapsibleContent>
                 <div className="pl-8 pt-1 space-y-1">
                 {item.subItems.map((subItem: any, subIndex: number) => (
-                    subItem.subItems ? <CollapsibleSidebarItem key={subIndex} item={subItem} /> :
+                    subItem.subItems ? <CollapsibleSidebarItem key={subIndex} item={subItem} path={[...path, subItem.label]} openPath={openPath} setOpenPath={setOpenPath} /> :
                     <SidebarMenuButton asChild variant="ghost" key={subIndex}>
                         <Link href={subItem.href}>{subItem.label}</Link>
                     </SidebarMenuButton>
@@ -273,6 +273,7 @@ function deepClone<T>(obj: T): T {
 }
 
 export function StaffSidebar() {
+  const [openPath, setOpenPath] = useState<string[]>([]);
   const { user } = useUser();
   const firestore = useFirestore();
   const { setTheme } = useTheme();
@@ -392,7 +393,7 @@ export function StaffSidebar() {
           {menuItems.map((item, index) => (
             <SidebarMenuItem key={index}>
               {item.subItems && item.subItems.length > 0 ? (
-                 <CollapsibleSidebarItem item={item} />
+                 <CollapsibleSidebarItem item={item} path={[item.label]} openPath={openPath} setOpenPath={setOpenPath} />
               ) : item.href ? (
                 <SidebarMenuButton asChild>
                   <Link href={item.href!}>
