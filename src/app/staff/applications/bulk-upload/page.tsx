@@ -27,7 +27,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useBranch } from '@/context/BranchContext';
 import { Input } from '@/components/ui/input';
-import { customerNationalIdIndexRef, nationalIdIndexKey, normalizeNationalId } from '@/lib/customer-identification';
+import { normalizeNationalId } from '@/lib/customer-identification';
 
 const loanProductHeaders = [
     "name", "description", "status", "loanType", "minAmount", "maxAmount",
@@ -306,18 +306,10 @@ export default function BulkUploadPage() {
                     throw "Institution not found!";
                 }
 
-                const idIndexRefs = uploadedData.map(row =>
-                    customerNationalIdIndexRef(firestore, userData.institutionId, row.idNumber)
-                );
-                const idIndexSnapshots = await Promise.all(idIndexRefs.map(ref => transaction.get(ref)));
-                if (idIndexSnapshots.some(snapshot => snapshot.exists())) {
-                    throw new Error('One or more national IDs were registered while this upload was being prepared. Refresh and try again.');
-                }
-                
                 let customerCounter = instDoc.data().customerCounter || 0;
                 const shortName = instDoc.data().shortName || "INST";
                 
-                for (const [rowIndex, row] of uploadedData.entries()) {
+                for (const row of uploadedData) {
                     const product = savingsProducts?.find(p => p.id === row.savingsProductId);
                     if (product && product.charges && fees) {
                         product.charges.forEach((chargeId: string) => {
@@ -348,7 +340,6 @@ export default function BulkUploadPage() {
                         idType: row['idType'] || 'National ID',
                         idNumber: String(row['idNumber']).trim(),
                         idNumber_lowercase: normalizedNationalId,
-                        idNumberKey: nationalIdIndexKey(normalizedNationalId),
                         dateOfBirth: row['dateOfBirth'] ? new Date(row['dateOfBirth']) : null,
                         gender: row['gender'] || '',
                         maritalStatus: row['maritalStatus'] || '',
@@ -384,11 +375,6 @@ export default function BulkUploadPage() {
                         createdAt: serverTimestamp(),
                     };
                     transaction.set(newCustomerRef, customerData);
-                    transaction.set(idIndexRefs[rowIndex], {
-                        customerId: newCustomerRef.id,
-                        idNumber: customerData.idNumber,
-                        createdAt: serverTimestamp(),
-                    });
 
                     const newSavingsAccountRef = doc(collection(newCustomerRef, 'savingsAccounts'));
                     const savingsAccountData = {
