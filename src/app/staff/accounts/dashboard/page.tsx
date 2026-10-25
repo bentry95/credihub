@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { DashboardPageHeader } from '@/components/staff/dashboard-page-header';
 import {
   Table,
   TableBody,
@@ -202,10 +203,11 @@ export default function AccountsDashboardPage() {
   const isLoading = journalsLoading || isCoaLoading;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-8">
+      <DashboardPageHeader title="Accounts" description="Monitor your institution’s financial performance and recent ledger activity." />
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {kpiData.map((kpi, index) => (
-          <Card key={index}>
+          <Card key={index} className="rounded-2xl border-border/70 shadow-sm transition-shadow hover:shadow-md">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{kpi.title}</CardTitle>
               <kpi.icon className="h-5 w-5 text-muted-foreground" />
@@ -226,7 +228,7 @@ export default function AccountsDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
+        <Card className="rounded-2xl border-border/70 shadow-sm lg:col-span-3">
           <CardHeader>
             <CardTitle>Income vs. Expenses</CardTitle>
             <CardDescription>
@@ -264,7 +266,7 @@ export default function AccountsDashboardPage() {
             )}
           </CardContent>
         </Card>
-        <Card className="lg:col-span-2">
+        <Card className="rounded-2xl border-border/70 shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle>Recent Journal Entries</CardTitle>
             <CardDescription>

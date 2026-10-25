@@ -7,9 +7,92 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
+import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { defineSecret } from "firebase-functions/params";
+import nodemailer from "nodemailer";
+import { randomBytes } from "node:crypto";
 
 // Initialize the Firebase Admin SDK once at the root level.
 admin.initializeApp();
+
+const smtpHost = defineSecret('SMTP_HOST');
+const smtpPort = defineSecret('SMTP_PORT');
+const smtpUser = defineSecret('SMTP_USER');
+const smtpPassword = defineSecret('SMTP_PASSWORD');
+const smtpFrom = defineSecret('SMTP_FROM');
+
+function createMailer() {
+    const port = Number(smtpPort.value() || 587);
+    return nodemailer.createTransport({
+        host: smtpHost.value(),
+        port,
+        secure: port === 465,
+        auth: { user: smtpUser.value(), pass: smtpPassword.value() },
+    });
+}
+
+function escapeHtml(value: string) {
+    return value.replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[character] || character);
+}
+
+/** Delivers a customer notification when a loan moves to a different stage. */
+export const notifyCustomerLoanStage = onDocumentUpdated({
+    document: 'institutions/{institutionId}/loanApplications/{loanId}',
+    secrets: [smtpHost, smtpPort, smtpUser, smtpPassword, smtpFrom],
+}, async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after || before.status === after.status || !after.customerId) return;
+
+    const institutionId = event.params.institutionId;
+    const customerSnap = await admin.firestore().doc(`institutions/${institutionId}/customers/${after.customerId}`).get();
+    const email = customerSnap.data()?.email;
+    if (!email) {
+        logger.info('Loan stage email skipped: customer has no email address.', { institutionId, loanId: event.params.loanId });
+        return;
+    }
+    const institutionSnap = await admin.firestore().doc(`institutions/${institutionId}`).get();
+    const institutionName = institutionSnap.data()?.name || 'CrediHub';
+    const customerName = customerSnap.data()?.name || 'Customer';
+    const loanId = event.params.loanId;
+    await createMailer().sendMail({
+        from: smtpFrom.value(),
+        to: email,
+        subject: `Loan application update: ${after.status}`,
+        text: `Hello ${customerName}, your loan application ${loanId} has moved from ${before.status} to ${after.status}. Contact ${institutionName} if you need assistance.`,
+        html: `<p>Hello ${escapeHtml(customerName)},</p><p>Your loan application <strong>${escapeHtml(loanId)}</strong> has moved from <strong>${escapeHtml(String(before.status || 'Unknown'))}</strong> to <strong>${escapeHtml(String(after.status || 'Unknown'))}</strong>.</p><p>Contact ${escapeHtml(institutionName)} if you need assistance.</p>`,
+    });
+});
+
+/** Sends a staff invitation after confirming the caller and institution ownership. */
+export const sendStaffInvitationEmail = onCall({
+    region: 'us-central1',
+    secrets: [smtpHost, smtpPort, smtpUser, smtpPassword, smtpFrom],
+}, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to send an invitation.');
+    const { email, code, institutionId } = request.data || {};
+    if (typeof email !== 'string' || typeof code !== 'string' || typeof institutionId !== 'string') {
+        throw new HttpsError('invalid-argument', 'Email, invitation code, and institution are required.');
+    }
+    const caller = await admin.firestore().doc(`users/${request.auth.uid}`).get();
+    const callerData = caller.data();
+    if (!callerData || !['admin', 'institution-admin'].includes(callerData.role) ||
+        (callerData.role !== 'admin' && callerData.institutionId !== institutionId)) {
+        throw new HttpsError('permission-denied', 'Only an institution administrator can send staff invitations.');
+    }
+    const institution = await admin.firestore().doc(`institutions/${institutionId}`).get();
+    const name = institution.data()?.name || 'your institution';
+    await createMailer().sendMail({
+        from: smtpFrom.value(),
+        to: email,
+        subject: `Invitation to join ${name}`,
+        text: `You have been invited to join ${name} on CrediHub. Use invitation code ${code} to sign up.`,
+        html: `<p>You have been invited to join ${escapeHtml(name)} on CrediHub.</p><p>Use this invitation code to sign up: <strong>${escapeHtml(code)}</strong></p>`,
+    });
+    return { success: true };
+});
 
 /**
  * Checks if the caller has specific role privileges via their decoded token.
@@ -29,7 +112,7 @@ export const generateInviteCode = onCall({ region: "us-central1", cors: true }, 
     const institutionId = request.auth!.token.institutionId;
     if (!institutionId) throw new HttpsError("failed-precondition", "Missing institution context.");
 
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const code = randomBytes(4).toString('hex').toUpperCase();
     // Use a unique ID for the document, but the code itself is what the user enters.
     const codeId = admin.firestore().collection('temp').doc().id;
 
@@ -100,6 +183,16 @@ export const signupWithInviteCode = onCall({ region: "us-central1", cors: true }
 
     const codeDoc = snapshot.docs[0];
     const { institutionId } = codeDoc.data();
+
+    const institutionSnapshot = await admin.firestore().collection('institutions').doc(institutionId).get();
+    const policy = institutionSnapshot.data()?.securitySettings || {};
+    const minimumLength = Math.max(8, Number(policy.passwordMinLength) || 8);
+    if (password.length < minimumLength ||
+        (policy.requireUppercase && !/[A-Z]/.test(password)) ||
+        (policy.requireNumber && !/[0-9]/.test(password)) ||
+        (policy.requireSymbol && !/[^A-Za-z0-9]/.test(password))) {
+        throw new HttpsError('invalid-argument', 'Password does not meet this institution’s security requirements.');
+    }
 
     try {
         // 1. Create Auth User

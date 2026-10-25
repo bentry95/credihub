@@ -20,18 +20,23 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useUser, useFirestore, useCollection, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, doc, query, orderBy, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useFirebaseApp } from '@/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { collection, doc, query, orderBy } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { PlusCircle, Loader2, KeyRound, Copy, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input';
 
 export default function InvitationsPage() {
   const { user } = useUser();
   const firestore = useFirestore();
+  const firebaseApp = useFirebaseApp();
   const { toast } = useToast();
   
   const [generating, setGenerating] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState('');
 
   const userDocRef = useMemoFirebase(
     () => (firestore && user ? doc(firestore, 'users', user.uid) : null),
@@ -47,25 +52,21 @@ export default function InvitationsPage() {
   const { data: codes, isLoading: isCodesLoading } = useCollection(codesQuery);
 
   const handleGenerateCode = async () => {
-    if (!firestore || !institutionId || !user) return;
+    if (!firestore || !firebaseApp || !institutionId || !user) return;
     setGenerating(true);
     try {
-        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const codeId = doc(collection(firestore, 'temp')).id;
-        const codesRef = doc(firestore, 'institutions', institutionId, 'invitationCodes', codeId);
+        const generateInvite = httpsCallable<undefined, { code: string }>(getFunctions(firebaseApp, 'us-central1'), 'generateInviteCode');
+        const { data } = await generateInvite();
+        const code = data.code;
 
-        await setDoc(codesRef, {
-            id: codeId,
-            code,
-            institutionId,
-            status: 'Active',
-            createdAt: serverTimestamp(),
-            createdBy: user.uid,
-        });
+        if (inviteEmail.trim()) {
+          const sendInvitation = httpsCallable(getFunctions(firebaseApp, 'us-central1'), 'sendStaffInvitationEmail');
+          await sendInvitation({ email: inviteEmail.trim(), code, institutionId });
+        }
 
-        toast({ title: "Code Generated", description: "A new invitation code is ready for use." });
+        toast({ title: inviteEmail.trim() ? "Invitation Sent" : "Code Generated", description: inviteEmail.trim() ? `An invitation was emailed to ${inviteEmail.trim()}.` : "A new invitation code is ready for use." });
     } catch (e: any) {
-        toast({ variant: 'destructive', title: "Error", description: "Failed to generate code." });
+        toast({ variant: 'destructive', title: "Error", description: inviteEmail.trim() ? "The code was created, but the invitation email could not be sent. Check SMTP configuration and try again." : "Failed to generate code." });
     } finally {
         setGenerating(false);
     }
@@ -96,10 +97,13 @@ export default function InvitationsPage() {
             Generate and manage one-time codes for new staff members to join.
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        <Input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="Email address (optional)" className="w-64" aria-label="Invitee email address" />
         <Button onClick={handleGenerateCode} disabled={generating}>
           {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
           Generate New Code
         </Button>
+        </div>
       </div>
 
       <Card>

@@ -9,7 +9,8 @@ import * as z from 'zod';
 import Link from 'next/link';
 import { Mail, Lock, Loader2, AlertCircle, KeyRound, User as UserIcon, Building } from 'lucide-react';
 import { collection, query, where, getDocs, doc, setDoc, serverTimestamp, updateDoc, collectionGroup, limit, getDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -42,6 +43,7 @@ function SignupPageContent() {
   const router = useRouter();
   const firestore = useFirestore();
   const auth = useAuth();
+  const firebaseApp = useFirebaseApp();
   
   const [step, setStep] = useState(1); // 1: Enter Code, 2: Enter Info
   const [institution, setInstitution] = useState<{ id: string, name: string } | null>(null);
@@ -95,29 +97,13 @@ function SignupPageContent() {
   }
 
   async function onInfoSubmit(values: z.infer<typeof infoSchema>) {
-    if (!auth || !firestore || !codeDoc) return;
+    if (!auth || !firestore || !firebaseApp || !codeDoc) return;
     setLoading(true);
     setError(null);
     try {
-        // 1. Create Auth User
-        const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
-        const user = userCredential.user;
-
-        // 2. Mark code as used
-        const codeRef = doc(firestore, 'institutions', codeDoc.institutionId, 'invitationCodes', codeDoc.id);
-        await updateDoc(codeRef, { status: 'Used' });
-
-        // 3. Create User profile with Pending status
-        await setDoc(doc(firestore, 'users', user.uid), {
-            uid: user.uid,
-            email: values.email,
-            firstName: values.firstName,
-            lastName: values.lastName,
-            name: `${values.firstName} ${values.lastName}`,
-            institutionId: codeDoc.institutionId,
-            status: 'Pending',
-            createdAt: serverTimestamp(),
-        });
+        const signup = httpsCallable(getFunctions(firebaseApp, 'us-central1'), 'signupWithInviteCode');
+        await signup({ code: codeDoc.code, email: values.email, password: values.password, firstName: values.firstName, lastName: values.lastName });
+        await signInWithEmailAndPassword(auth, values.email, values.password);
 
         setSuccess(true);
     } catch (e: any) {

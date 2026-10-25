@@ -10,6 +10,7 @@ import {
   CardTitle,
   CardFooter,
 } from '@/components/ui/card';
+import { DashboardPageHeader } from '@/components/staff/dashboard-page-header';
 import {
   Table,
   TableBody,
@@ -255,16 +256,10 @@ export default function TellerDashboardPage() {
 
   return (
     <>
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">My Teller Dashboard</h1>
-            <p className="text-muted-foreground mt-1">
-              A real-time overview of your till for today, {format(new Date(), 'PPP')}.
-            </p>
-          </div>
+      <div className="space-y-8 pb-8">
+        <DashboardPageHeader title="My Teller Dashboard" description={`A real-time overview of your till for today, ${format(new Date(), 'PPP')}.`}>
           {!dayStarted ? (
-              <Button onClick={handleStartDay}>
+              <Button onClick={handleStartDay} variant="secondary" className="rounded-xl shadow-sm">
                   <PlayCircle className="mr-2 h-4 w-4" /> Start Day
               </Button>
           ) : (
@@ -272,7 +267,7 @@ export default function TellerDashboardPage() {
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <span tabIndex={0}>
-                            <Button variant="destructive" onClick={() => setIsEndDayOpen(true)} disabled={expectedBalance !== 0}>
+                            <Button variant="destructive" className="rounded-xl" onClick={() => setIsEndDayOpen(true)} disabled={expectedBalance !== 0}>
                                 <LogOut className="mr-2 h-4 w-4" /> End My Day
                             </Button>
                         </span>
@@ -285,10 +280,10 @@ export default function TellerDashboardPage() {
                 </Tooltip>
             </TooltipProvider>
           )}
-        </div>
+        </DashboardPageHeader>
 
         {!dayStarted ? (
-            <Card className="flex items-center justify-center h-96">
+            <Card className="flex h-96 items-center justify-center rounded-3xl border-dashed shadow-none">
                 <CardHeader className="text-center">
                     <PlayCircle className="mx-auto h-12 w-12 text-muted-foreground" />
                     <CardTitle className="mt-4">Your Day Has Not Started</CardTitle>
@@ -297,8 +292,8 @@ export default function TellerDashboardPage() {
             </Card>
         ) : (
           <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                   <Card>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+                   <Card className="rounded-2xl border-border/70 shadow-sm transition-shadow hover:shadow-md">
                       <CardHeader className="flex flex-row items-center justify-between pb-2">
                           <CardTitle className="text-sm font-medium">Current Till Balance</CardTitle>
                           <Wallet className="h-5 w-5 text-muted-foreground" />
@@ -308,7 +303,7 @@ export default function TellerDashboardPage() {
                           <p className="text-xs text-muted-foreground">Expected cash in your drawer.</p>
                       </CardContent>
                   </Card>
-                  <Card>
+                  <Card className="rounded-2xl border-border/70 shadow-sm transition-shadow hover:shadow-md">
                       <CardHeader className="flex flex-row items-center justify-between pb-2">
                           <CardTitle className="text-sm font-medium">Today's Transactions</CardTitle>
                           <ArrowRightLeft className="h-5 w-5 text-muted-foreground" />
@@ -318,7 +313,7 @@ export default function TellerDashboardPage() {
                           <p className="text-xs text-muted-foreground">Total number of monetary transactions.</p>
                       </CardContent>
                   </Card>
-                  <Card>
+                  <Card className="rounded-2xl border-border/70 shadow-sm transition-shadow hover:shadow-md">
                       <CardHeader className="flex flex-row items-center justify-between pb-2">
                           <CardTitle className="text-sm font-medium">Max Till Holding</CardTitle>
                           <ShieldAlert className="h-5 w-5 text-muted-foreground" />
@@ -328,7 +323,7 @@ export default function TellerDashboardPage() {
                           <p className="text-xs text-muted-foreground">Your maximum allowed cash holding.</p>
                       </CardContent>
                   </Card>
-                   <Card>
+                   <Card className="rounded-2xl border-border/70 shadow-sm transition-shadow hover:shadow-md">
                       <CardHeader className="flex flex-row items-center justify-between pb-2">
                           <CardTitle className="text-sm font-medium">Max Withdrawal Limit</CardTitle>
                           <ArrowUp className="h-5 w-5 text-muted-foreground" />
@@ -340,7 +335,7 @@ export default function TellerDashboardPage() {
                   </Card>
               </div>
 
-              <Card>
+              <Card className="rounded-2xl border-border/70 shadow-sm">
                   <CardHeader>
                   <CardTitle>My Till Summary & Recent Transactions</CardTitle>
                   <CardDescription>

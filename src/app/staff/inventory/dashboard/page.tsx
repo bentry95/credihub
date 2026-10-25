@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { DashboardPageHeader } from '@/components/staff/dashboard-page-header';
 import {
   Table,
   TableBody,
@@ -124,10 +125,11 @@ export default function InventoryDashboardPage() {
   const isLoading = isItemsLoading || isCategoriesLoading;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-8">
+      <DashboardPageHeader title="Inventory" description="Keep an eye on stock value, item mix, and inventory that needs attention." />
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {kpiCards.map((kpi) => (
-          <Card key={kpi.title}>
+          <Card key={kpi.title} className="rounded-2xl border-border/70 shadow-sm transition-shadow hover:shadow-md">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{kpi.title}</CardTitle>
               <kpi.icon className="h-5 w-5 text-muted-foreground" />
@@ -140,7 +142,7 @@ export default function InventoryDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <Card className="lg:col-span-3">
+        <Card className="rounded-2xl border-border/70 shadow-sm lg:col-span-3">
           <CardHeader>
             <CardTitle>Stock Value by Category</CardTitle>
           </CardHeader>
@@ -158,7 +160,7 @@ export default function InventoryDashboardPage() {
             )}
           </CardContent>
         </Card>
-        <Card className="lg:col-span-2">
+        <Card className="rounded-2xl border-border/70 shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle>Items by Type</CardTitle>
           </CardHeader>
@@ -180,7 +182,7 @@ export default function InventoryDashboardPage() {
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
+        <Card className="rounded-2xl border-border/70 shadow-sm">
           <CardHeader><CardTitle>Low Stock Items</CardTitle><CardDescription>Top 5 items at or below their reorder level.</CardDescription></CardHeader>
           <CardContent>
             <Table>
@@ -198,7 +200,7 @@ export default function InventoryDashboardPage() {
             </Table>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-2xl border-border/70 shadow-sm">
           <CardHeader><CardTitle>Recently Added Items</CardTitle><CardDescription>The 5 most recently created items.</CardDescription></CardHeader>
           <CardContent>
             <Table>

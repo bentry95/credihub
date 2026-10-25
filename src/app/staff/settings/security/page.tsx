@@ -39,6 +39,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 const securitySchema = z.object({
   inactivityTimeout: z.coerce.number().min(0, 'Timeout must be a positive number. Use 0 to disable.'),
+  passwordMinLength: z.coerce.number().int().min(8, 'Minimum password length is 8 characters.').max(128),
+  requireUppercase: z.boolean(),
+  requireNumber: z.boolean(),
+  requireSymbol: z.boolean(),
 });
 
 export default function SecuritySettingsPage() {
@@ -65,6 +69,10 @@ export default function SecuritySettingsPage() {
       resolver: zodResolver(securitySchema),
       defaultValues: {
           inactivityTimeout: 0,
+          passwordMinLength: 8,
+          requireUppercase: false,
+          requireNumber: false,
+          requireSymbol: false,
       }
     });
 
@@ -72,6 +80,10 @@ export default function SecuritySettingsPage() {
         if (institutionData) {
             form.reset({
                 inactivityTimeout: institutionData.securitySettings?.inactivityTimeout ?? 15,
+                passwordMinLength: institutionData.securitySettings?.passwordMinLength ?? 8,
+                requireUppercase: institutionData.securitySettings?.requireUppercase ?? false,
+                requireNumber: institutionData.securitySettings?.requireNumber ?? false,
+                requireSymbol: institutionData.securitySettings?.requireSymbol ?? false,
             });
         }
     }, [institutionData, form]);
@@ -83,6 +95,10 @@ export default function SecuritySettingsPage() {
         try {
             await updateDoc(institutionDocRef, {
                 'securitySettings.inactivityTimeout': values.inactivityTimeout,
+                'securitySettings.passwordMinLength': values.passwordMinLength,
+                'securitySettings.requireUppercase': values.requireUppercase,
+                'securitySettings.requireNumber': values.requireNumber,
+                'securitySettings.requireSymbol': values.requireSymbol,
             });
             toast({
                 title: "Settings Saved",
@@ -148,6 +164,37 @@ export default function SecuritySettingsPage() {
                                     </FormItem>
                                 )}
                             />
+                        </CardContent>
+                        <CardFooter className="justify-end">
+                            <Button type="submit" disabled={loading || !form.formState.isDirty}>
+                                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                Save Settings
+                            </Button>
+                        </CardFooter>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Password Policy</CardTitle>
+                            <CardDescription>Set password requirements for new staff accounts.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                            <FormField control={form.control} name="passwordMinLength" render={({ field }) => (
+                                <FormItem className="max-w-sm"><FormLabel>Minimum password length</FormLabel>
+                                    <FormControl><Input type="number" min={8} max={128} {...field} /></FormControl>
+                                    <FormDescription>At least 8 characters. Existing passwords are not changed.</FormDescription><FormMessage />
+                                </FormItem>
+                            )} />
+                            {([
+                                ['requireUppercase', 'Require an uppercase letter'],
+                                ['requireNumber', 'Require a number'],
+                                ['requireSymbol', 'Require a symbol'],
+                            ] as const).map(([name, label]) => (
+                                <FormField key={name} control={form.control} name={name} render={({ field }) => (
+                                    <FormItem className="flex items-center justify-between max-w-lg rounded-md border p-3">
+                                        <FormLabel>{label}</FormLabel><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                                    </FormItem>
+                                )} />
+                            ))}
                         </CardContent>
                         <CardFooter className="justify-end">
                             <Button type="submit" disabled={loading || !form.formState.isDirty}>

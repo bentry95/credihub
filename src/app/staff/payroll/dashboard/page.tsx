@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { DashboardPageHeader } from '@/components/staff/dashboard-page-header';
 import {
   Table,
   TableBody,
@@ -152,24 +153,18 @@ export default function PayrollDashboardPage() {
   const finalIsLoading = isLoading || isPayrollsLoading || isEmployeesLoading;
 
   return (
-    <div className="space-y-6">
-       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Payroll Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            An overview of payroll activities and key metrics.
-          </p>
-        </div>
-        <Button asChild>
+    <div className="space-y-8 pb-8">
+       <DashboardPageHeader title="Payroll" description="A clear view of payroll activity, costs, and recent runs.">
+        <Button asChild variant="secondary" className="rounded-xl shadow-sm">
             <Link href="/staff/payroll/payroll-runs">
                 <PlayCircle className="mr-2 h-4 w-4" /> Process New Payroll
             </Link>
         </Button>
-      </div>
+      </DashboardPageHeader>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {kpiData.map((kpi) => (
-          <Card key={kpi.title}>
+          <Card key={kpi.title} className="rounded-2xl border-border/70 shadow-sm transition-shadow hover:shadow-md">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{kpi.title}</CardTitle>
               <kpi.icon className="h-5 w-5 text-muted-foreground" />
@@ -185,7 +180,7 @@ export default function PayrollDashboardPage() {
         ))}
       </div>
 
-       <Card>
+       <Card className="rounded-2xl border-border/70 shadow-sm">
         <CardHeader>
           <CardTitle>Recent Payroll Runs</CardTitle>
           <CardDescription>

@@ -73,7 +73,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { useTeller } from '@/context/TellerContext';
-import { calculateAmortization, calculateRepaymentSplit } from '@/lib/finance';
+import { calculateAccruedLoanInterest, calculateAmortization, calculateRepaymentSplit } from '@/lib/finance';
 import { TransactionReceipt, type ReceiptData } from '@/components/staff/transaction-receipt';
 import { useRouter } from 'next/navigation';
 
@@ -87,9 +87,7 @@ const repaymentSchema = z.object({
   depositDate: z.date().optional(),
   institutionBankAccountId: z.string().optional(),
   // Overpayment fields
-  overpaymentOption: z.enum(['ToSavings', 'ToLoan']).optional(),
   overpaymentSavingsAccountId: z.string().optional(),
-  overpaymentLoanAccountId: z.string().optional(),
 }).refine(data => {
     if (data.paymentMethod === 'Bank') {
       return !!data.bankName && !!data.depositSlipNumber && !!data.depositDate && !!data.institutionBankAccountId;
@@ -198,20 +196,7 @@ export default function LoanRepaymentPage() {
   const paymentMethod = watch('paymentMethod');
   const selectedLoanId = watch('accountId');
   const paymentAmount = watch('amount');
-  const overpaymentOption = watch('overpaymentOption');
-
   const selectedLoan = useMemo(() => activeLoans.find(loan => loan.id === selectedLoanId), [activeLoans, selectedLoanId]);
-  
-  const overpaymentAmount = useMemo(() => {
-    if (!selectedLoan || !paymentAmount || paymentAmount <= selectedLoan.outstandingPrincipal) {
-      return 0;
-    }
-    return paymentAmount - selectedLoan.outstandingPrincipal;
-  }, [selectedLoan, paymentAmount]);
-
-  const otherActiveLoans = useMemo(() => {
-      return activeLoans.filter(loan => loan.id !== selectedLoanId);
-  }, [activeLoans, selectedLoanId]);
   
   const coaQuery = useMemoFirebase(
     () =>
@@ -233,6 +218,66 @@ export default function LoanRepaymentPage() {
     [firestore, userData]
   );
   const { data: loanProducts, isLoading: isProductsLoading } = useCollection(productsQuery);
+
+  const loanRepaymentsQuery = useMemoFirebase(
+    () => firestore && userData?.institutionId && selectedLoanId
+      ? query(collection(firestore, 'institutions', userData.institutionId, 'journals'), where('loanId', '==', selectedLoanId))
+      : null,
+    [firestore, userData, selectedLoanId]
+  );
+  const { data: loanRepaymentJournals, isLoading: isLoanRepaymentHistoryLoading } = useCollection(loanRepaymentsQuery);
+
+  const selectedLoanAmount = useMemo(() => {
+    const principal = selectedLoan?.outstandingPrincipal || 0;
+    if (!selectedLoan) return { principal: 0, interest: 0, total: 0 };
+    const product = loanProducts?.find(p => p.id === selectedLoan.loanProductId);
+    if (!product || !selectedLoan.disbursalDate) return { principal, interest: 0, total: principal };
+
+    const { schedule } = calculateAmortization({
+      principal: selectedLoan.amount,
+      annualInterestRate: product.annualInterestRate,
+      term: selectedLoan.term,
+      tenureUnit: selectedLoan.tenureUnit,
+      interestRateType: product.interestRateType,
+      startDate: selectedLoan.firstRepaymentDate?.toDate() || selectedLoan.disbursalDate.toDate(),
+    });
+    const repayments = (loanRepaymentJournals || [])
+      .filter((journal: any) => journal.status === 'Posted')
+      .map((journal: any) => {
+        const journalDate = journal.date?.toDate?.() || journal.createdAt?.toDate?.();
+        const transactions = journal.transactions || [];
+        return {
+          date: journalDate,
+          principalPaid: journal.principalPaid ?? transactions
+            .filter((entry: any) => entry.accountId === product.loanPortfolioAccountId)
+            .reduce((sum: number, entry: any) => sum + (entry.credit || 0), 0),
+          interestPaid: journal.interestPaid ?? transactions
+            .filter((entry: any) => entry.accountId === product.interestIncomeAccountId)
+            .reduce((sum: number, entry: any) => sum + (entry.credit || 0), 0),
+        };
+      })
+      .filter((repayment: any) => repayment.date instanceof Date);
+    const asOfDate = institutionData?.systemDate?.toDate?.() || new Date();
+    const interest = calculateAccruedLoanInterest({
+      principal: selectedLoan.amount,
+      outstandingPrincipal: principal,
+      annualInterestRate: product.annualInterestRate,
+      interestRateType: product.interestRateType,
+      startDate: selectedLoan.disbursalDate.toDate(),
+      asOfDate,
+      maturityDate: schedule[schedule.length - 1]?.paymentDate,
+      repayments,
+    });
+    return { principal, interest, total: principal + interest };
+  }, [selectedLoan, loanProducts, institutionData, loanRepaymentJournals]);
+
+  const selectedLoanAmountDue = selectedLoanAmount.total;
+  const isAmountDueLoading = !!selectedLoan && (isLoanRepaymentHistoryLoading || isProductsLoading || isInstitutionLoading);
+
+  const overpaymentAmount = useMemo(() => {
+    if (!selectedLoan || !paymentAmount || paymentAmount <= selectedLoanAmountDue) return 0;
+    return paymentAmount - selectedLoanAmountDue;
+  }, [selectedLoan, paymentAmount, selectedLoanAmountDue]);
 
 
   const handleSearch = async () => {
@@ -292,6 +337,8 @@ export default function LoanRepaymentPage() {
       const allLoans = [...loanAppsSnap.docs.map(d => ({id:d.id, ...d.data()})), ...runningLoansSnap.docs.map(d => ({id:d.id, ...d.data()}))];
       setActiveLoans(allLoans);
       setSavingsAccounts(savingsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (savingsSnap.size === 1) form.setValue('overpaymentSavingsAccountId', savingsSnap.docs[0].id);
+      else form.setValue('overpaymentSavingsAccountId', '');
     }
     setLoadingAccounts(false);
   };
@@ -315,6 +362,29 @@ export default function LoanRepaymentPage() {
     try {
       let receiptData: ReceiptData | null = null;
 
+      const loanHistoryQuery = query(
+        collection(firestore, 'institutions', userData.institutionId, 'journals'),
+        where('loanId', '==', selectedLoan.id)
+      );
+      const loanHistorySnapshot = await getDocs(loanHistoryQuery);
+      const repaymentHistory: { date: Date; principalPaid: number; interestPaid: number }[] = [];
+      loanHistorySnapshot.docs.forEach((journalDoc) => {
+        const journal = journalDoc.data();
+        if (journal.status !== 'Posted') return;
+        const journalDate = journal.date?.toDate?.() || journal.createdAt?.toDate?.();
+        if (!(journalDate instanceof Date)) return;
+        const transactions = journal.transactions || [];
+        repaymentHistory.push({
+          date: journalDate,
+            principalPaid: journal.principalPaid ?? transactions
+              .filter((entry: any) => entry.accountId === product.loanPortfolioAccountId)
+              .reduce((sum: number, entry: any) => sum + (entry.credit || 0), 0),
+            interestPaid: journal.interestPaid ?? transactions
+              .filter((entry: any) => entry.accountId === product.interestIncomeAccountId)
+              .reduce((sum: number, entry: any) => sum + (entry.credit || 0), 0),
+        });
+      });
+
       await runTransaction(firestore, async (transaction) => {
         const instDoc = await transaction.get(institutionDocRef);
         if (!instDoc.exists()) throw "Institution not found!";
@@ -325,22 +395,38 @@ export default function LoanRepaymentPage() {
         const newTransactionNumber = transactionReceiptCounter + 1;
         const newTransactionId = `TRLR${String(newTransactionNumber).padStart(10, '0')}`;
   
-        // Calculate Repayment Split
+        const loanCollectionName = ['Disbursed', 'Overdue'].includes(selectedLoan.status) ? 'runningLoans' : 'loanApplications';
+        const loanDocRef = doc(firestore, 'institutions', userData.institutionId, loanCollectionName, selectedLoan.id);
+        const loanSnapshot = await transaction.get(loanDocRef);
+        if (!loanSnapshot.exists()) throw new Error('The selected loan no longer exists.');
+        const currentLoan = { ...selectedLoan, ...loanSnapshot.data() };
+
+        // Accrue interest only through the system date, then split interest before principal.
         const { schedule } = calculateAmortization({
-          principal: selectedLoan.amount,
+          principal: currentLoan.amount,
           annualInterestRate: product.annualInterestRate,
-          term: selectedLoan.term,
-          tenureUnit: selectedLoan.tenureUnit,
+          term: currentLoan.term,
+          tenureUnit: currentLoan.tenureUnit,
           interestRateType: product.interestRateType,
-          startDate: selectedLoan.disbursalDate?.toDate(),
+          startDate: currentLoan.firstRepaymentDate?.toDate() || currentLoan.disbursalDate?.toDate(),
         });
-  
+
+        const accruedInterestDue = calculateAccruedLoanInterest({
+          principal: currentLoan.amount,
+          outstandingPrincipal: currentLoan.outstandingPrincipal || 0,
+          annualInterestRate: product.annualInterestRate,
+          interestRateType: product.interestRateType,
+          startDate: currentLoan.disbursalDate?.toDate() || systemDate,
+          asOfDate: systemDate,
+          maturityDate: schedule[schedule.length - 1]?.paymentDate,
+          repayments: repaymentHistory,
+        });
         const { principalPaid, interestPaid } = calculateRepaymentSplit(
           values.amount,
-          selectedLoan.outstandingPrincipal,
-          schedule,
-          systemDate
+          currentLoan.outstandingPrincipal || 0,
+          accruedInterestDue
         );
+        const repaymentOverpayment = Math.max(0, values.amount - ((currentLoan.outstandingPrincipal || 0) + accruedInterestDue));
         
         // --- Journal Entry ---
         const journalsRef = collection(firestore, 'institutions', userData.institutionId, 'journals');
@@ -359,6 +445,21 @@ export default function LoanRepaymentPage() {
           { accountId: product.loanPortfolioAccountId || "MISSING_LOAN_PORTFOLIO_GL", debit: 0, credit: principalPaid },
           { accountId: product.interestIncomeAccountId || "MISSING_INTEREST_INCOME_GL", debit: 0, credit: interestPaid },
         ];
+
+        const savingsAccount = repaymentOverpayment > 0
+          ? savingsAccounts.find(account => account.id === values.overpaymentSavingsAccountId)
+          : null;
+        if (repaymentOverpayment > 0 && !savingsAccount) {
+          throw new Error('Select an active savings account for the overpayment.');
+        }
+        const savingsDocRef = savingsAccount
+          ? doc(firestore, 'institutions', userData.institutionId, 'customers', selectedCustomer.id, 'savingsAccounts', savingsAccount.id)
+          : null;
+        const savingsSnapshot = savingsDocRef ? await transaction.get(savingsDocRef) : null;
+        if (savingsSnapshot && !savingsSnapshot.exists()) throw new Error('The selected savings account no longer exists.');
+        if (savingsAccount) {
+          journalTransactions.push({ accountId: savingsAccount.savingsControlAccountId || 'MISSING_SAVINGS_GL', debit: 0, credit: repaymentOverpayment });
+        }
   
         const newJournal = {
           id: newTransactionId,
@@ -372,22 +473,25 @@ export default function LoanRepaymentPage() {
           createdAt: serverTimestamp(),
           loanId: values.accountId,
           repaymentAmount: values.amount,
+          principalPaid,
+          interestPaid,
+          accruedInterestDue,
         };
   
         transaction.set(newJournalDocRef, newJournal);
         
         if (values.paymentMethod === 'Cash') {
             // --- Update Loan Document ---
-            const loanCollectionName = ['Disbursed', 'Overdue'].includes(selectedLoan.status) ? 'runningLoans' : 'loanApplications';
-            const loanDocRef = doc(firestore, 'institutions', userData.institutionId, loanCollectionName, selectedLoan.id);
-            
-            const newOutstandingPrincipal = Math.max(0, selectedLoan.outstandingPrincipal - principalPaid);
-            const newStatus = newOutstandingPrincipal <= 0 ? 'Repaid' : selectedLoan.status;
+            const newOutstandingPrincipal = Math.max(0, (currentLoan.outstandingPrincipal || 0) - principalPaid);
+            const newStatus = newOutstandingPrincipal <= 0 ? 'Repaid' : currentLoan.status;
     
             transaction.update(loanDocRef, {
             outstandingPrincipal: newOutstandingPrincipal,
             status: newStatus,
             });
+            if (savingsAccount && repaymentOverpayment > 0 && savingsDocRef && savingsSnapshot) {
+              transaction.update(savingsDocRef, { balance: (savingsSnapshot.data().balance || 0) + repaymentOverpayment });
+            }
         }
   
         // Update counter
@@ -557,12 +661,26 @@ export default function LoanRepaymentPage() {
                                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                                     <FormControl><SelectTrigger><SelectValue placeholder={loadingAccounts ? "Loading..." : "Select an active loan"} /></SelectTrigger></FormControl>
                                     <SelectContent>
-                                        {activeLoans.map(loan => <SelectItem key={loan.id} value={loan.id}>Loan ID: {loan.id.substring(0,8)}... (Outstanding: MWK {loan.outstandingPrincipal.toLocaleString()})</SelectItem>)}
+                                        {activeLoans.map(loan => <SelectItem key={loan.id} value={loan.id}>Loan ID: {loan.id.substring(0,8)}... (Principal: MWK {(loan.outstandingPrincipal || 0).toLocaleString()})</SelectItem>)}
                                     </SelectContent>
                                     </Select>
                                     <FormMessage />
                                 </FormItem>
                             )} />
+
+                            {selectedLoan && (
+                              <div className="rounded-xl border bg-muted/30 px-4 py-3 text-sm md:col-span-2">
+                                {isAmountDueLoading ? (
+                                  <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Calculating accrued interest…</div>
+                                ) : (
+                                  <div className="grid gap-2 sm:grid-cols-3">
+                                    <div><span className="text-muted-foreground">Principal</span><p className="mt-0.5 font-semibold tabular-nums">MWK {selectedLoanAmount.principal.toLocaleString()}</p></div>
+                                    <div><span className="text-muted-foreground">Interest accrued to date</span><p className="mt-0.5 font-semibold tabular-nums">MWK {selectedLoanAmount.interest.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p></div>
+                                    <div><span className="text-muted-foreground">Total amount due today</span><p className="mt-0.5 font-semibold text-primary tabular-nums">MWK {selectedLoanAmount.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p></div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             
                             <FormField control={form.control} name="amount" render={({ field }) => (
                                 <FormItem>
@@ -577,42 +695,12 @@ export default function LoanRepaymentPage() {
                         <Card className="bg-amber-50 border-amber-200">
                           <CardHeader><CardTitle className="text-amber-900">Overpayment Detected</CardTitle></CardHeader>
                           <CardContent className="space-y-4">
-                            <p>This payment exceeds the loan balance by <strong>MWK {overpaymentAmount.toLocaleString()}</strong>. Please choose how to allocate the excess funds.</p>
-                             <FormField
-                              control={form.control}
-                              name="overpaymentOption"
-                              render={({ field }) => (
-                                <FormItem className="space-y-3"><FormLabel>Overpayment Allocation</FormLabel>
-                                  <FormControl>
-                                    <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col space-y-1">
-                                      <FormItem className="flex items-center space-x-3 space-y-0">
-                                        <FormControl><RadioGroupItem value="ToLoan" /></FormControl>
-                                        <FormLabel className="font-normal">Apply to another active loan</FormLabel>
-                                      </FormItem>
-                                      <FormItem className="flex items-center space-x-3 space-y-0">
-                                        <FormControl><RadioGroupItem value="ToSavings" /></FormControl>
-                                        <FormLabel className="font-normal">Deposit to a savings account</FormLabel>
-                                      </FormItem>
-                                    </RadioGroup>
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-
-                            {overpaymentOption === 'ToLoan' && (
-                              <FormField control={form.control} name="overpaymentLoanAccountId" render={({ field }) => (
-                                <FormItem><FormLabel>Select Another Loan</FormLabel>
-                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                        <FormControl><SelectTrigger><SelectValue placeholder="Select a loan..." /></SelectTrigger></FormControl>
-                                        <SelectContent>{otherActiveLoans.map(loan => <SelectItem key={loan.id} value={loan.id}>Loan ID: {loan.id.substring(0,8)}... (Outstanding: MWK {loan.amount.toLocaleString()})</SelectItem>)}</SelectContent>
-                                    </Select>
-                                </FormItem>
-                              )} />
-                            )}
-                            {overpaymentOption === 'ToSavings' && (
+                            <p>The total due is <strong>MWK {selectedLoanAmountDue.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>. The excess of <strong>MWK {overpaymentAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong> will be deposited to savings.</p>
+                            {savingsAccounts.length === 0 && <p className="text-sm font-medium text-destructive">This customer has no active savings account for the overpayment.</p>}
+                            {(
                                 <FormField control={form.control} name="overpaymentSavingsAccountId" render={({ field }) => (
                                 <FormItem><FormLabel>Select Savings Account</FormLabel>
-                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <Select onValueChange={field.onChange} value={field.value}>
                                         <FormControl><SelectTrigger><SelectValue placeholder="Select a savings account..." /></SelectTrigger></FormControl>
                                         <SelectContent>{savingsAccounts.map(acc => <SelectItem key={acc.id} value={acc.id}>{acc.name || `Account ${acc.id.substring(0,6)}`} (Balance: MWK {acc.balance?.toLocaleString() || 0})</SelectItem>)}</SelectContent>
                                     </Select>
@@ -624,7 +712,7 @@ export default function LoanRepaymentPage() {
                       )}
                       </CardContent>
                       <CardFooter className="flex justify-end">
-                        <Button type="submit" disabled={isSubmitting}>
+                        <Button type="submit" disabled={isSubmitting || isAmountDueLoading || (overpaymentAmount > 0 && (!savingsAccounts.length || !form.watch('overpaymentSavingsAccountId')))}>
                           {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <ArrowDownCircle className="mr-2 h-4 w-4" />}
                           Submit Payment
                         </Button>

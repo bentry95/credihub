@@ -49,6 +49,23 @@ CrediHub is a core banking platform designed for Savings and Credit Co-operative
 - **Maker-checker controls:** Require dual control for sensitive operations such as loan approvals and reversals.
 - **Audit trail:** Log significant user actions for accountability and compliance.
 - **Session management:** Configure inactivity timeouts to protect sensitive data.
+- **Password policy:** Institution administrators can set a minimum password length and require uppercase letters, numbers, or symbols for staff onboarding.
+- **Email notifications:** Staff invitations and loan application stage changes are delivered through the configured SMTP server.
+
+### Configure SMTP for Firebase Functions
+
+SMTP credentials are stored as Firebase Functions secrets and are never written to Firestore or exposed to the browser. From the project root, set the five values below (Firebase prompts for each secret):
+
+```sh
+firebase functions:secrets:set SMTP_HOST
+firebase functions:secrets:set SMTP_PORT
+firebase functions:secrets:set SMTP_USER
+firebase functions:secrets:set SMTP_PASSWORD
+firebase functions:secrets:set SMTP_FROM
+npm run deploy:functions
+```
+
+Use port `587` for STARTTLS or `465` for implicit TLS. `SMTP_FROM` should be a verified sender address such as `CrediHub <no-reply@example.com>`. The invitation page can email a generated code when an invitee address is entered. Loan stage emails are sent when a loan application's status changes and the linked customer has an email address.
 
 ## Technology stack
 

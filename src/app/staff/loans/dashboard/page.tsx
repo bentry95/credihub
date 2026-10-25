@@ -12,6 +12,7 @@ import {
   CardTitle,
   CardFooter,
 } from '@/components/ui/card';
+import { DashboardPageHeader } from '@/components/staff/dashboard-page-header';
 import {
   Table,
   TableBody,
@@ -262,7 +263,6 @@ export default function LoansDashboardPage() {
       return creationDate >= date.from! && creationDate <= date.to!;
     }).length;
   }, [filteredCustomers, date]);
-    
    const { loansInArrears, portfolioAtRisk, totalInterestArrears } = useMemo(() => {
     if (!activeLoans || !loanProducts || !systemDate) return { loansInArrears: [], portfolioAtRisk: 0, totalInterestArrears: 0 };
     
@@ -386,13 +386,9 @@ export default function LoansDashboardPage() {
   ];
 
   return (
-    <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-                <h1 className="text-2xl font-bold">Loans Dashboard</h1>
-                <p className="text-muted-foreground">An analytical overview of the entire loan portfolio.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-sm">
+    <div className="space-y-8 pb-8">
+        <DashboardPageHeader title="Loans" description="Monitor portfolio performance, repayment activity, and loans needing follow-up." />
+        <div className="flex flex-wrap items-center justify-end gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm">
                  <BranchSwitcher />
                   <Popover>
                     <PopoverTrigger asChild>
@@ -429,14 +425,11 @@ export default function LoansDashboardPage() {
                     />
                     </PopoverContent>
                 </Popover>
-            </div>
         </div>
-
-        <Separator />
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {kpiData.map((kpi, index) => (
-            <Card key={index}>
+            <Card key={index} className="rounded-2xl border-border/70 shadow-sm transition-shadow hover:shadow-md">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">{kpi.title}</CardTitle>
                 <kpi.icon className="h-5 w-5 text-muted-foreground" />
@@ -449,7 +442,7 @@ export default function LoansDashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-            <Card className="lg:col-span-3">
+            <Card className="rounded-2xl border-border/70 shadow-sm lg:col-span-3">
                 <CardHeader>
                     <CardTitle>New Loans Disbursed (by Month)</CardTitle>
                 </CardHeader>
@@ -467,7 +460,7 @@ export default function LoansDashboardPage() {
                     )}
                 </CardContent>
             </Card>
-            <Card className="lg:col-span-2">
+            <Card className="rounded-2xl border-border/70 shadow-sm lg:col-span-2">
                 <CardHeader>
                     <CardTitle>Portfolio by Product</CardTitle>
                 </CardHeader>
@@ -490,7 +483,7 @@ export default function LoansDashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
+            <Card className="rounded-2xl border-border/70 shadow-sm">
                 <CardHeader>
                     <CardTitle>Awaiting Disbursement</CardTitle>
                     <CardDescription>Approved loans ready to be funded.</CardDescription>
@@ -516,7 +509,7 @@ export default function LoansDashboardPage() {
                     </Table>
                 </CardContent>
             </Card>
-            <Card>
+            <Card className="rounded-2xl border-border/70 shadow-sm">
                 <CardHeader>
                     <CardTitle>Top 5 Loans in Arrears</CardTitle>
                     <CardDescription>Customers with overdue payments needing follow-up.</CardDescription>
@@ -546,5 +539,3 @@ export default function LoansDashboardPage() {
     </div>
   );
 }
-
-    

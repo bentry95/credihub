@@ -1,6 +1,7 @@
 
 'use client';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
   Sidebar,
@@ -51,7 +52,7 @@ import {
     CollapsibleContent,
     CollapsibleTrigger,
   } from "@/components/ui/collapsible"
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useUser, useFirestore, useDoc, useCollection, useMemoFirebase } from '@/firebase';
 import { doc, collection, query, where } from 'firebase/firestore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -220,24 +221,28 @@ const tellerSubMenus = {
 }
 
 const CollapsibleSidebarItem = ({ item, path, openPath, setOpenPath }: { item: any; path: string[]; openPath: string[]; setOpenPath: (path: string[]) => void }) => {
+    const pathname = usePathname();
     const isOpen = openPath.length >= path.length && path.every((part, index) => openPath[index] === part);
+    const hasActiveChild = item.subItems?.some((subItem: any) =>
+        subItem.href
+            ? pathname === subItem.href || pathname.startsWith(`${subItem.href}/`)
+            : subItem.subItems?.some((nestedItem: any) => pathname === nestedItem.href || pathname.startsWith(`${nestedItem.href}/`))
+    );
     return (
         <Collapsible open={isOpen} onOpenChange={(open) => setOpenPath(open ? path : openPath.slice(0, path.length - 1))}>
             <CollapsibleTrigger asChild>
-                <div className="flex items-center justify-between w-full cursor-pointer">
-                    <SidebarMenuButton className="w-full justify-start pointer-events-none">
-                        <item.icon />
-                        {item.label}
-                    </SidebarMenuButton>
-                    <ChevronDown className="h-4 w-4 mr-2" />
-                </div>
+                <SidebarMenuButton isActive={hasActiveChild} className="h-10 justify-start rounded-xl px-3 font-medium data-[active=true]:bg-primary/10 data-[active=true]:text-primary">
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                    <ChevronDown className={`ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                </SidebarMenuButton>
             </CollapsibleTrigger>
             <CollapsibleContent>
-                <div className="pl-8 pt-1 space-y-1">
+                <div className="ml-5 space-y-1 border-l border-sidebar-border py-1 pl-3">
                 {item.subItems.map((subItem: any, subIndex: number) => (
                     subItem.subItems ? <CollapsibleSidebarItem key={subIndex} item={subItem} path={[...path, subItem.label]} openPath={openPath} setOpenPath={setOpenPath} /> :
-                    <SidebarMenuButton asChild variant="ghost" key={subIndex}>
-                        <Link href={subItem.href}>{subItem.label}</Link>
+                    <SidebarMenuButton asChild variant="ghost" key={subIndex} isActive={pathname === subItem.href || pathname.startsWith(`${subItem.href}/`)} className="h-9 rounded-lg px-3 text-[13px] font-normal data-[active=true]:bg-primary/10 data-[active=true]:font-medium data-[active=true]:text-primary">
+                        <Link href={subItem.href}><span className="truncate">{subItem.label}</span></Link>
                     </SidebarMenuButton>
                 ))}
                 </div>
@@ -274,6 +279,7 @@ function deepClone<T>(obj: T): T {
 
 export function StaffSidebar() {
   const [openPath, setOpenPath] = useState<string[]>([]);
+  const pathname = usePathname();
   const { user } = useUser();
   const firestore = useFirestore();
   const { setTheme } = useTheme();
@@ -364,16 +370,34 @@ export function StaffSidebar() {
     return filterItems(deepClone(finalMenuItems));
 
   }, [tellerRole, userPermissions, userData]);
+
+  useEffect(() => {
+    const findExpandedPath = (items: any[], parents: string[] = []): string[] | null => {
+      for (const item of items) {
+        const currentPath = [...parents, item.label];
+        if (item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))) return parents;
+        if (item.subItems?.length) {
+          const foundPath = findExpandedPath(item.subItems, currentPath);
+          if (foundPath) return foundPath;
+        }
+      }
+      return null;
+    };
+
+    const activePath = findExpandedPath(menuItems);
+    if (activePath) setOpenPath(activePath);
+  }, [menuItems, pathname]);
   
   if (!userData) {
       return (
-        <Sidebar>
-            <SidebarHeader>
-                <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight">CrediHub</h1>
+        <Sidebar className="border-r border-sidebar-border bg-sidebar">
+            <SidebarHeader className="border-b border-sidebar-border/70 px-4 py-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Landmark className="h-5 w-5" /></div>
+                  <div className="min-w-0"><h1 className="text-base font-bold tracking-tight">CrediHub</h1><p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Financial workspace</p></div>
                 </div>
             </SidebarHeader>
-            <SidebarContent>
+            <SidebarContent className="px-3 py-4">
                 {/* Render nothing or a skeleton, as we are waiting for user data */}
             </SidebarContent>
         </Sidebar>
@@ -382,23 +406,30 @@ export function StaffSidebar() {
 
 
   return (
-    <Sidebar>
-      <SidebarHeader>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold tracking-tight">CrediHub</h1>
+    <Sidebar className="border-r border-sidebar-border bg-sidebar">
+      <SidebarHeader className="border-b border-sidebar-border/70 px-4 py-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <Landmark className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-base font-bold tracking-tight">CrediHub</h1>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Financial workspace</p>
+          </div>
         </div>
       </SidebarHeader>
-      <SidebarContent>
-        <SidebarMenu>
+      <SidebarContent className="gap-1 px-3 py-4">
+        <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground group-data-[collapsible=icon]:hidden">Workspace</p>
+        <SidebarMenu className="gap-1">
           {menuItems.map((item, index) => (
             <SidebarMenuItem key={index}>
               {item.subItems && item.subItems.length > 0 ? (
                  <CollapsibleSidebarItem item={item} path={[item.label]} openPath={openPath} setOpenPath={setOpenPath} />
               ) : item.href ? (
-                <SidebarMenuButton asChild>
+                <SidebarMenuButton asChild isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)} className="h-10 rounded-xl px-3 font-medium data-[active=true]:bg-primary/10 data-[active=true]:text-primary">
                   <Link href={item.href!}>
-                    <item.icon />
-                    {item.label}
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
                   </Link>
                 </SidebarMenuButton>
               ) : null}
@@ -406,21 +437,21 @@ export function StaffSidebar() {
           ))}
         </SidebarMenu>
       </SidebarContent>
-       <SidebarFooter>
-         <SidebarMenu>
+       <SidebarFooter className="border-t border-sidebar-border/70 bg-muted/20 px-3 py-3">
+         <SidebarMenu className="gap-1">
              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
+                <SidebarMenuButton asChild isActive={pathname === '/staff/user-manual' || pathname.startsWith('/staff/user-manual/')} className="h-10 rounded-xl px-3 font-medium data-[active=true]:bg-primary/10 data-[active=true]:text-primary">
                   <Link href="/staff/user-manual">
-                    <BookUser />
-                    User Manual
+                    <BookUser className="h-4 w-4" />
+                    <span>User Manual</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild>
+                <SidebarMenuButton asChild isActive={pathname === '/staff/profile' || pathname.startsWith('/staff/profile/')} className="h-10 rounded-xl px-3 font-medium data-[active=true]:bg-primary/10 data-[active=true]:text-primary">
                   <Link href="/staff/profile">
-                    <User />
-                    Profile
+                    <User className="h-4 w-4" />
+                    <span>Profile</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
