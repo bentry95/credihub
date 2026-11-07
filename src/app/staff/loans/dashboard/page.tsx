@@ -134,6 +134,7 @@ export default function LoansDashboardPage() {
   }>({ customers: [], loanApps: [], runningLoans: [], journals: [] });
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDate(new Date()), 1000);
@@ -193,6 +194,8 @@ export default function LoansDashboardPage() {
         where('date', '<=', Timestamp.fromDate(date.to!))
       );
       
+      setLoadError(false);
+      setIsLoading(true);
       try {
         const [customersSnap, loanAppsSnap, runningLoansSnap, journalsSnap] = await Promise.all([
           getDocs(customersQuery),
@@ -209,6 +212,7 @@ export default function LoansDashboardPage() {
         });
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
+        setLoadError(true);
       } finally {
         setIsLoading(false);
       }
@@ -387,6 +391,11 @@ export default function LoansDashboardPage() {
 
   return (
     <div className="space-y-8 pb-8">
+      {loadError && (
+        <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-foreground">
+          We couldn’t load the latest loan dashboard information. Please refresh the page and try again.
+        </div>
+      )}
         <DashboardPageHeader title="Loans" description="Monitor portfolio performance, repayment activity, and loans needing follow-up." />
         <div className="flex flex-wrap items-center justify-end gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm">
                  <BranchSwitcher />

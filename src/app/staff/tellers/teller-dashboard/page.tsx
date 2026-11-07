@@ -128,7 +128,7 @@ export default function TellerDashboardPage() {
 
         } catch (e) {
             console.error("Error fetching teller dashboard data:", e);
-            setError("Failed to load dashboard data. Please refresh the page.");
+            setError("We couldn’t load your teller dashboard. Please refresh the page and try again.");
         } finally {
             setIsDataLoading(false);
         }
@@ -226,7 +226,7 @@ export default function TellerDashboardPage() {
 
     } catch (e) {
         console.error(e);
-        setError("Failed to end the day. Please try again.");
+        setError("We couldn’t close your teller day. Please try again.");
     } finally {
         setLoading(false);
     }

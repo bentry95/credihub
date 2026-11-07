@@ -47,7 +47,7 @@ export function LoginForm() {
 
   const handleRedirect = async (user: User) => {
     if (!firestore) {
-      setError("Firestore is not available. Cannot verify user role.");
+      setError("Sign-in is temporarily unavailable. Please try again in a moment.");
       setLoading(false);
       return;
     }
@@ -68,15 +68,15 @@ export function LoginForm() {
           // Regular staff go to branch selection
           router.push('/staff/select-branch');
         } else {
-          setError("Your user role is not configured for dashboard access.");
+          setError("Your account is not set up for dashboard access yet. Please contact your administrator.");
           if(auth) await signOut(auth);
         }
       } else {
-         setError("User profile not found. Please contact support.");
+         setError("We could not find your account details. Please ask your administrator to check your setup.");
          if(auth) await signOut(auth);
       }
     } catch (e) {
-        setError("Failed to retrieve user profile. Please try again.");
+        setError("We could not load your account details. Please try again.");
         console.error(e);
         if(auth) await signOut(auth);
     } finally {
@@ -91,7 +91,9 @@ export function LoginForm() {
     
     try {
         if (!auth || !firestore) {
-            throw new Error("Firebase services are not available.");
+            setError("Sign-in is temporarily unavailable. Please try again in a moment.");
+            setLoading(false);
+            return;
         }
         const userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
         const user = userCredential.user;
@@ -101,9 +103,13 @@ export function LoginForm() {
     } catch (e) {
         const err = e as AuthError;
         if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-            setError("Invalid credentials. Please check your email and password.");
+            setError("We could not sign you in. Check your email and password, then try again.");
+        } else if (err.code === 'auth/too-many-requests') {
+            setError("Too many sign-in attempts. Please wait a little and try again.");
+        } else if (err.code === 'auth/network-request-failed') {
+            setError("We could not reach the sign-in service. Check your connection and try again.");
         } else {
-            setError("An unexpected error occurred. Please try again.");
+            setError("We could not sign you in right now. Please try again.");
             console.error(err);
         }
         setLoading(false);
