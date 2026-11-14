@@ -125,6 +125,7 @@ export default function CustomerStatementsPage() {
   const { data: journals, isLoading: isJournalsLoading } = useCollection(journalsQuery);
   
   const { data: loanProducts, isLoading: isProductsLoading } = useCollection(useMemoFirebase(() => (firestore && institutionId ? collection(firestore, 'institutions', institutionId, 'loanProducts') : null), [firestore, institutionId]));
+  const { data: savingsProducts } = useCollection(useMemoFirebase(() => (firestore && institutionId ? collection(firestore, 'institutions', institutionId, 'savingsProducts') : null), [firestore, institutionId]));
 
 
   const form = useForm<z.infer<typeof statementFiltersSchema>>({
@@ -197,9 +198,47 @@ export default function CustomerStatementsPage() {
     setIsGenerating(true);
     setStatement(null);
 
+    if (!journals || !selectedCustomer) {
+        setIsGenerating(false);
+        return;
+    }
+
+    const startDate = startOfDay(values.dateRange.from);
+    const endDate = endOfDay(values.dateRange.to);
+
     if (values.accountType === 'Savings') {
-        // Savings statement logic is complex due to data model, showing empty for now.
-        setStatement({ accountName: 'Savings Account', transactions: [], summary: { openingBalance: 0, totalDebits: 0, totalCredits: 0, closingBalance: 0 } });
+        const account = customerAccounts.savings.find(a => a.id === values.accountId);
+        const product = savingsProducts?.find(p => p.id === account?.productId);
+        const controlAccountId = product?.savingsControlAccountId || account?.savingsControlAccountId;
+        if (!account || !controlAccountId) {
+            setIsGenerating(false);
+            return;
+        }
+
+        // Savings journals currently store the savings account ID in the description.
+        // Match both that ID and its control GL so statements cannot include another account's activity.
+        const accountJournals = journals.filter(j =>
+            String(j.description || '').includes(`Acct: ${account.id}`) &&
+            (j.transactions || []).some((line: any) => line.accountId === controlAccountId)
+        ).map(j => ({
+            date: j.date?.toDate ? j.date.toDate() : new Date(j.date),
+            description: j.description || 'Account transaction',
+            debit: (j.transactions || []).filter((line: any) => line.accountId === controlAccountId).reduce((sum: number, line: any) => sum + (Number(line.debit) || 0), 0),
+            credit: (j.transactions || []).filter((line: any) => line.accountId === controlAccountId).reduce((sum: number, line: any) => sum + (Number(line.credit) || 0), 0),
+        })).filter(tx => !Number.isNaN(tx.date.getTime())).sort((a, b) => a.date.getTime() - b.date.getTime());
+
+        const openingBalance = accountJournals.filter(tx => tx.date < startDate).reduce((balance, tx) => balance + tx.credit - tx.debit, 0);
+        const periodTransactions = accountJournals.filter(tx => tx.date >= startDate && tx.date <= endDate);
+        let runningBalance = openingBalance;
+        let totalDebits = 0;
+        let totalCredits = 0;
+        const transactions = [{ date: startDate, description: 'Opening Balance', debit: 0, credit: 0, balance: openingBalance }, ...periodTransactions.map(tx => {
+            totalDebits += tx.debit;
+            totalCredits += tx.credit;
+            runningBalance += tx.credit - tx.debit;
+            return { ...tx, balance: runningBalance };
+        })];
+        setStatement({ accountName: account.name || product.name || 'Savings Account', transactions, summary: { openingBalance, totalDebits, totalCredits, closingBalance: runningBalance } });
         setIsGenerating(false);
         return;
     }
@@ -211,9 +250,6 @@ export default function CustomerStatementsPage() {
             setIsGenerating(false);
             return;
         }
-
-        const startDate = startOfDay(values.dateRange.from);
-        const endDate = endOfDay(values.dateRange.to);
 
         const { schedule } = calculateAmortization({
             principal: loan.amount,
