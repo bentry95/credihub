@@ -34,19 +34,33 @@ import {
     Printer,
     ArrowLeft,
     Landmark,
-    TrendingUp,
     FileWarning,
     CalendarClock,
-    User,
     ShieldCheck,
-    History,
-    FileText,
     Wallet,
     Users2,
+    Hash,
+    CircleDollarSign,
+    Building2,
+    Phone,
+    Mail,
+    Percent,
+    CalendarCheck,
 } from 'lucide-react';
 import Link from 'next/link';
-import { format, isPast } from 'date-fns';
+import { format } from 'date-fns';
 import { calculateAmortization } from '@/lib/finance';
+import { Progress } from '@/components/ui/progress';
+
+const asDate = (value: any): Date | null => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value.toDate === 'function') return value.toDate();
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+const money = (value: number) => `MWK ${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const titleCase = (value?: string) => value ? value.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]/g, ' ').replace(/\b\w/g, character => character.toUpperCase()) : '—';
 
 
 function LoanDetailsPageContent() {
@@ -129,16 +143,18 @@ function LoanDetailsPageContent() {
 
     const repayments = useMemo(() => {
         if (!repaymentsData) return [];
-        return [...repaymentsData].sort((a,b) => b.date.toDate() - a.date.toDate());
+        return [...repaymentsData].map(journal => ({ ...journal, dateObject: asDate(journal.date) || asDate(journal.createdAt) }))
+            .sort((a, b) => (b.dateObject?.getTime() || 0) - (a.dateObject?.getTime() || 0));
     }, [repaymentsData]);
 
 
     const totalRepaid = useMemo(() => {
       if (!repayments) return 0;
-      return repayments.reduce((sum, journal) => sum + (journal.repaymentAmount || 0), 0);
+      return repayments.reduce((sum, journal) => sum + (Number(journal.repaymentAmount) || 0), 0);
     }, [repayments]);
 
-    
+    const totalPrincipalPaid = useMemo(() => repayments.reduce((sum, item: any) => sum + (Number(item.principalPaid) || (item.transactions || []).filter((entry: any) => entry.accountId === loanProduct?.loanPortfolioAccountId).reduce((value: number, entry: any) => value + (Number(entry.credit) || 0), 0)), 0), [repayments, loanProduct]);
+    const totalInterestPaid = useMemo(() => repayments.reduce((sum, item: any) => sum + (Number(item.interestPaid) || (item.transactions || []).filter((entry: any) => entry.accountId === loanProduct?.interestIncomeAccountId).reduce((value: number, entry: any) => value + (Number(entry.credit) || 0), 0)), 0), [repayments, loanProduct]);
     const isLoading = isLoanLoading || isCustomerLoading || isProductLoading || areUsersLoading || isInstitutionLoading || areRepaymentsLoading;
 
     const { schedule, monthlyInstallment } = useMemo(() => {
@@ -155,33 +171,17 @@ function LoanDetailsPageContent() {
         });
     }, [loan, loanProduct]);
 
-    const { principalInArrears, interestInArrears } = useMemo(() => {
-        if (!schedule.length || !systemDate) {
-            return { principalInArrears: 0, interestInArrears: 0 };
-        }
-
-        const installmentsDue = schedule.filter(row => isPast(row.paymentDate) || row.paymentDate.toDateString() === systemDate.toDateString());
-        
-        const totalPrincipalDue = installmentsDue.reduce((sum, row) => sum + row.principal, 0);
-        const totalInterestDue = installmentsDue.reduce((sum, row) => sum + row.interest, 0);
-
-        let principalPaid = 0;
-        let interestPaid = 0;
-        
-        let remainingRepayment = totalRepaid;
-
-        // Allocate payments first to interest due, then principal due.
-        interestPaid = Math.min(remainingRepayment, totalInterestDue);
-        remainingRepayment -= interestPaid;
-
-        principalPaid = Math.min(remainingRepayment, totalPrincipalDue);
-
-        return {
-            principalInArrears: Math.max(0, totalPrincipalDue - principalPaid),
-            interestInArrears: Math.max(0, totalInterestDue - interestPaid),
-        };
-
-    }, [schedule, systemDate, totalRepaid]);
+    const outstandingPrincipal = Number(loan?.outstandingPrincipal ?? loan?.amount ?? 0);
+    const asOfDate = systemDate || new Date();
+    const dueSchedule = schedule.filter(row => row.paymentDate <= asOfDate);
+    const duePrincipal = dueSchedule.reduce((sum, row) => sum + row.principal, 0);
+    const dueInterest = dueSchedule.reduce((sum, row) => sum + row.interest, 0);
+    const principalInArrears = Math.max(0, duePrincipal - totalPrincipalPaid);
+    const interestInArrears = Math.max(0, dueInterest - totalInterestPaid);
+    const totalArrears = principalInArrears + interestInArrears;
+    const totalScheduled = schedule.reduce((sum, row) => sum + row.totalPayment, 0);
+    const repaymentProgress = totalScheduled > 0 ? Math.min(100, (totalRepaid / totalScheduled) * 100) : 0;
+    const nextInstallment = schedule.find(row => schedule.slice(0, row.period).reduce((sum, item) => sum + item.totalPayment, 0) > totalRepaid);
 
     const getInstallmentStatus = (installmentPeriod: number, paymentDate: Date) => {
         const cumulativeExpected = schedule.slice(0, installmentPeriod).reduce((sum, row) => sum + row.totalPayment, 0);
@@ -190,7 +190,7 @@ function LoanDetailsPageContent() {
             return <Badge variant="default">Paid</Badge>;
         }
         
-        if (systemDate && isPast(paymentDate, systemDate)) {
+        if (paymentDate < asOfDate) {
             return <Badge variant="destructive">Overdue</Badge>;
         }
         
@@ -198,11 +198,20 @@ function LoanDetailsPageContent() {
     };
 
     
-    const historyEvents = loan?.auditHistory?.map((event: any) => ({
+    const historyEvents = [
+      ...(loan?.auditHistory || []).map((event: any) => ({
       ...event,
-      date: event.timestamp?.toDate(),
+      action: event.action || 'Loan updated',
+      date: asDate(event.timestamp),
       userName: getUserName(event.userId),
-    })).sort((a: any, b: any) => b.date - a.date) || [];
+      })),
+      ...[
+        ['Application submitted', loan?.dateApplied, loan?.submittedBy],
+        ['Appraisal completed', loan?.appraisalDate, loan?.appraisedBy],
+        ['Loan approved', loan?.approvalDate, loan?.approvedBy],
+        ['Loan disbursed', loan?.disbursalDate, loan?.disbursedBy || loan?.approvedBy],
+      ].filter(([, dateValue]) => asDate(dateValue)).map(([action, dateValue, userId]: any) => ({ action, date: asDate(dateValue), userName: userId ? getUserName(userId) : 'System', details: '' })),
+    ].sort((a: any, b: any) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
 
 
     if (isLoading) {
@@ -229,13 +238,28 @@ function LoanDetailsPageContent() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Loan 360° View</h1>
                     <p className="text-muted-foreground mt-1">
-                        Comprehensive overview for loan <span className="font-mono">{loanId.substring(0,8)}...</span> for {customer?.name}
+                        {customer?.name || 'Customer'} · Loan <span className="font-mono">{loan.accountNumber || loanId}</span>
                     </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Button variant="outline" asChild><Link href="/staff/loans/all-applications"><ArrowLeft className="mr-2 h-4 w-4"/> Back to All Loans</Link></Button>
+                    {['Disbursed', 'Overdue'].includes(loan.status) && <Button asChild><Link href="/staff/tellers/loan-repayment"><CircleDollarSign className="mr-2 h-4 w-4"/>Record Repayment</Link></Button>}
                     <Button onClick={() => handlePrint()}><Printer className="mr-2 h-4 w-4" /> Print</Button>
                 </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+                <Badge variant={loan.status === 'Overdue' ? 'destructive' : loan.status === 'Disbursed' ? 'default' : 'secondary'} className="px-3 py-1 text-sm">{titleCase(loan.status)}</Badge>
+                {loanProduct?.name && <span className="text-sm text-muted-foreground">{loanProduct.name}</span>}
+                {loan.branchId && <span className="flex items-center gap-1 text-sm text-muted-foreground"><Building2 className="h-4 w-4"/>Branch {loan.branchId}</span>}
+                <span className="flex items-center gap-1 text-sm text-muted-foreground"><Hash className="h-4 w-4"/>ID: {loan.id}</span>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Outstanding principal</p><p className="mt-1 text-2xl font-semibold">{money(outstandingPrincipal)}</p><p className="mt-1 text-xs text-muted-foreground">Original principal {money(Number(loan.amount) || 0)}</p></CardContent></Card>
+                <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Total repaid</p><p className="mt-1 text-2xl font-semibold">{money(totalRepaid)}</p><p className="mt-1 text-xs text-muted-foreground">{repayments.length} posted payment{repayments.length === 1 ? '' : 's'}</p></CardContent></Card>
+                <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Arrears</p><p className={`mt-1 text-2xl font-semibold ${totalArrears > 0 ? 'text-destructive' : ''}`}>{money(totalArrears)}</p><p className="mt-1 text-xs text-muted-foreground">As of {format(asOfDate, 'PPP')}</p></CardContent></Card>
+                <Card><CardContent className="p-5"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Repayment progress</p><span className="text-sm font-medium">{repaymentProgress.toFixed(1)}%</span></div><Progress value={repaymentProgress} className="mt-3"/><p className="mt-2 text-xs text-muted-foreground">{money(totalRepaid)} of {money(totalScheduled)} scheduled</p></CardContent></Card>
             </div>
 
              <Tabs defaultValue="details">
@@ -248,30 +272,49 @@ function LoanDetailsPageContent() {
                     <TabsTrigger value="history">History</TabsTrigger>
                 </TabsList>
                 <TabsContent value="details" ref={printRef} className="bg-white text-black p-4 rounded-md">
-                    <Card className="print:border-none print:shadow-none">
-                        <CardHeader>
-                            <CardTitle>Loan Details</CardTitle>
-                            <CardDescription>A high-level summary of the loan's current financial status.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                            <Card>
-                                <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Outstanding Principal</CardTitle><Wallet className="h-4 w-4 text-muted-foreground"/></CardHeader>
-                                <CardContent><p className="text-2xl font-bold">MWK {loan.outstandingPrincipal?.toLocaleString() || loan.amount.toLocaleString()}</p></CardContent>
+                    <div className="space-y-6 print:text-black">
+                        <Card className="print:border-none print:shadow-none">
+                            <CardHeader><CardTitle>Borrower Profile</CardTitle><CardDescription>Customer details linked to this loan account.</CardDescription></CardHeader>
+                            <CardContent className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                                <div><p className="text-sm text-muted-foreground">Customer name</p><p className="font-medium">{customer?.name || '—'}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Customer number</p><p className="font-mono">{customer?.accountNumber || loan.customerId || '—'}</p></div>
+                                <div><p className="flex items-center gap-1 text-sm text-muted-foreground"><Phone className="h-3.5 w-3.5"/>Phone</p><p>{customer?.phone || '—'}</p></div>
+                                <div><p className="flex items-center gap-1 text-sm text-muted-foreground"><Mail className="h-3.5 w-3.5"/>Email</p><p className="break-all">{customer?.email || '—'}</p></div>
+                                <div><p className="text-sm text-muted-foreground">National ID</p><p>{customer?.idNumber || '—'}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Branch</p><p>{loan.branchName || loan.branchId || '—'}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Loan officer</p><p>{getUserName(loan.submittedBy)}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Product</p><p>{loanProduct?.name || loan.loanProductId || '—'}</p></div>
+                            </CardContent>
+                        </Card>
+                        <div className="grid gap-6 lg:grid-cols-2">
+                            <Card className="print:border-none print:shadow-none">
+                                <CardHeader><CardTitle>Loan Terms</CardTitle><CardDescription>Approved facility terms and repayment settings.</CardDescription></CardHeader>
+                                <CardContent className="grid gap-4 sm:grid-cols-2">
+                                    <div><p className="text-sm text-muted-foreground">Approved principal</p><p className="font-semibold">{money(Number(loan.amount) || 0)}</p></div>
+                                    <div><p className="flex items-center gap-1 text-sm text-muted-foreground"><Percent className="h-3.5 w-3.5"/>Annual interest rate</p><p className="font-semibold">{Number(loanProduct?.annualInterestRate || loan.interestRate || 0).toLocaleString()}%</p></div>
+                                    <div><p className="text-sm text-muted-foreground">Interest calculation</p><p>{loanProduct?.interestRateType || loan.interestCalculationMethod || '—'}</p></div>
+                                    <div><p className="text-sm text-muted-foreground">Repayment frequency</p><p>{titleCase(loan.repaymentFrequency || loanProduct?.repaymentFrequency)}</p></div>
+                                    <div><p className="text-sm text-muted-foreground">Term</p><p>{loan.term ? `${loan.term} ${titleCase(loan.tenureUnit || 'months')}` : '—'}</p></div>
+                                    <div><p className="text-sm text-muted-foreground">Installment</p><p>{monthlyInstallment ? money(monthlyInstallment) : '—'}</p></div>
+                                    <div><p className="text-sm text-muted-foreground">Next unpaid installment</p><p>{nextInstallment ? `${format(nextInstallment.paymentDate, 'PPP')} · ${money(nextInstallment.totalPayment)}` : 'No remaining scheduled installments'}</p></div>
+                                    <div><p className="text-sm text-muted-foreground">Total scheduled</p><p>{totalScheduled ? money(totalScheduled) : '—'}</p></div>
+                                    <div><p className="text-sm text-muted-foreground">Maturity date</p><p>{asDate(loan.maturityDate) ? format(asDate(loan.maturityDate)!, 'PPP') : (schedule.length ? format(schedule[schedule.length - 1].paymentDate, 'PPP') : '—')}</p></div>
+                                </CardContent>
                             </Card>
-                            <Card>
-                                <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Total Arrears</CardTitle><FileWarning className="h-4 w-4 text-muted-foreground"/></CardHeader>
-                                <CardContent><p className="text-2xl font-bold">MWK {(principalInArrears + interestInArrears).toLocaleString()}</p></CardContent>
+                            <Card className="print:border-none print:shadow-none">
+                                <CardHeader><CardTitle>Key Dates &amp; Decisions</CardTitle><CardDescription>Origination and approval milestones.</CardDescription></CardHeader>
+                                <CardContent className="space-y-4">
+                                    {[
+                                        ['Application submitted', loan.dateApplied, loan.submittedBy],
+                                        ['Appraised', loan.appraisalDate, loan.appraisedBy],
+                                        ['Approved', loan.approvalDate, loan.approvedBy],
+                                        ['Disbursed', loan.disbursalDate, loan.disbursedBy || loan.approvedBy],
+                                        ['First repayment due', loan.firstRepaymentDate, null],
+                                    ].map(([label, dateValue, userId]: any) => <div key={label} className="flex items-start justify-between gap-4 border-b pb-3 last:border-0"><div className="flex items-center gap-2"><CalendarCheck className="h-4 w-4 text-muted-foreground"/><span className="text-sm font-medium">{label}</span></div><div className="text-right text-sm"><p>{asDate(dateValue) ? format(asDate(dateValue)!, 'PPP') : '—'}</p>{userId && <p className="text-xs text-muted-foreground">{getUserName(userId)}</p>}</div></div>)}
+                                </CardContent>
                             </Card>
-                            <Card>
-                                <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Next Installment Date</CardTitle><CalendarClock className="h-4 w-4 text-muted-foreground"/></CardHeader>
-                                <CardContent><p className="text-2xl font-bold">{schedule[0] ? format(schedule[0].paymentDate, 'PPP') : 'N/A'}</p></CardContent>
-                            </Card>
-                            <Card>
-                                <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Next Installment Amount</CardTitle><Landmark className="h-4 w-4 text-muted-foreground"/></CardHeader>
-                                <CardContent><p className="text-2xl font-bold">MWK {monthlyInstallment.toLocaleString()}</p></CardContent>
-                            </Card>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
                 </TabsContent>
                 <TabsContent value="repayment-plan">
                      <Card>
@@ -311,7 +354,7 @@ function LoanDetailsPageContent() {
                      <Card>
                         <CardHeader>
                             <CardTitle>Loan Position</CardTitle>
-                            <CardDescription>A detailed breakdown of any amounts that are past due as of the current system date.</CardDescription>
+                            <CardDescription>Amounts due through {format(asOfDate, 'PPP')}, compared with repayments recorded against the loan.</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <Table>
@@ -322,9 +365,14 @@ function LoanDetailsPageContent() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    <TableRow><TableCell>Principal in Arrears</TableCell><TableCell className="text-right">MWK {principalInArrears.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell></TableRow>
-                                    <TableRow><TableCell>Interest in Arrears</TableCell><TableCell className="text-right">MWK {interestInArrears.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell></TableRow>
-                                    <TableRow className="font-bold"><TableCell>Total Outstanding Balance</TableCell><TableCell className="text-right">MWK {(loan.outstandingPrincipal + interestInArrears).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell></TableRow>
+                                    <TableRow><TableCell>Principal due to date</TableCell><TableCell className="text-right">{money(duePrincipal)}</TableCell></TableRow>
+                                    <TableRow><TableCell>Principal repaid</TableCell><TableCell className="text-right">{money(totalPrincipalPaid)}</TableCell></TableRow>
+                                    <TableRow><TableCell>Principal in arrears</TableCell><TableCell className="text-right">{money(principalInArrears)}</TableCell></TableRow>
+                                    <TableRow><TableCell>Interest due to date</TableCell><TableCell className="text-right">{money(dueInterest)}</TableCell></TableRow>
+                                    <TableRow><TableCell>Interest repaid</TableCell><TableCell className="text-right">{money(totalInterestPaid)}</TableCell></TableRow>
+                                    <TableRow><TableCell>Interest in arrears</TableCell><TableCell className="text-right">{money(interestInArrears)}</TableCell></TableRow>
+                                    <TableRow><TableCell>Current principal balance</TableCell><TableCell className="text-right">{money(outstandingPrincipal)}</TableCell></TableRow>
+                                    <TableRow className="font-bold"><TableCell>Total arrears</TableCell><TableCell className="text-right">{money(totalArrears)}</TableCell></TableRow>
                                 </TableBody>
                             </Table>
                         </CardContent>
@@ -341,22 +389,30 @@ function LoanDetailsPageContent() {
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Date</TableHead>
+                                        <TableHead>Receipt / Reference</TableHead>
                                         <TableHead>Description</TableHead>
-                                        <TableHead className="text-right">Amount</TableHead>
+                                        <TableHead>Method</TableHead>
+                                        <TableHead className="text-right">Principal</TableHead>
+                                        <TableHead className="text-right">Interest</TableHead>
+                                        <TableHead className="text-right">Total</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {repayments && repayments.length > 0 ? (
                                         repayments.map((p, i) => (
                                             <TableRow key={i}>
-                                                <TableCell>{format(p.date.toDate(), 'PPP')}</TableCell>
-                                                <TableCell>{p.description}</TableCell>
-                                                <TableCell className="text-right font-mono">MWK {p.repaymentAmount?.toLocaleString() || 0}</TableCell>
+                                                <TableCell>{p.dateObject ? format(p.dateObject, 'PPP p') : '—'}</TableCell>
+                                                <TableCell className="font-mono">{p.externalReference || p.id || '—'}</TableCell>
+                                                <TableCell>{p.description || 'Loan repayment'}</TableCell>
+                                                <TableCell>{p.paymentMethod || '—'}</TableCell>
+                                                <TableCell className="text-right">{money(Number(p.principalPaid) || 0)}</TableCell>
+                                                <TableCell className="text-right">{money(Number(p.interestPaid) || 0)}</TableCell>
+                                                <TableCell className="text-right font-mono">{money(Number(p.repaymentAmount) || 0)}</TableCell>
                                             </TableRow>
                                         ))
                                     ) : (
                                         <TableRow>
-                                            <TableCell colSpan={3} className="text-center h-24">
+                                            <TableCell colSpan={7} className="text-center h-24">
                                                 No repayments have been recorded for this loan yet.
                                             </TableCell>
                                         </TableRow>

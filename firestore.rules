@@ -101,6 +101,7 @@ service cloud.firestore {
           allow read, write: if isStaff(institutionId) || isPlatformAdmin(); 
           match /payslips/{ps} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
       }
+      match /attendanceRecords/{id} { allow read, write: if isStaff(institutionId) || isPlatformAdmin(); }
       
       // Invitation Codes - Public read for signup validation
       match /invitationCodes/{codeId} {

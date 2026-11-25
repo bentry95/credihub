@@ -12,10 +12,8 @@ import {
   useCollection,
   useFirebaseApp,
 } from '@/firebase';
-import { collection, doc, query, setDoc, serverTimestamp } from 'firebase/firestore';
-import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { firebaseConfig } from '@/firebase/config';
+import { collection, doc } from 'firebase/firestore';
+import { getFunctions, httpsCallable, FunctionsError } from 'firebase/functions';
 import {
   Card,
   CardContent,
@@ -76,6 +74,7 @@ const institutionStaffSchema = z.object({
 function AddNewUserContent() {
   const { user: currentUser } = useUser();
   const firestore = useFirestore();
+  const app = useFirebaseApp();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -121,7 +120,7 @@ function AddNewUserContent() {
   const { data: customRoles, isLoading: rolesLoading } = useCollection(rolesQuery);
 
   async function handleUserCreation(values: any, roleType: 'admin' | 'staff') {
-    if (!firestore || !currentUser) {
+    if (!firestore || !currentUser || !app) {
       setError("System services are not ready. Please try again.");
       return;
     }
@@ -129,18 +128,7 @@ function AddNewUserContent() {
     setLoading(true);
     setError(null);
     
-    let secondaryApp;
-
     try {
-      // Create a secondary Firebase app instance to avoid logging out the current admin
-      secondaryApp = initializeApp(firebaseConfig, `UserCreation-${Date.now()}`);
-      const secondaryAuth = getAuth(secondaryApp);
-      
-      // 1. Create the Auth record
-      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, values.email, values.tempPassword);
-      const newUid = userCredential.user.uid;
-
-      // 2. Prepare user data
       let finalRole = roleType === 'admin' ? 'admin' : 'staff';
       let customRoleId = null;
       let customRoleName = null;
@@ -157,14 +145,13 @@ function AddNewUserContent() {
            }
       }
 
-      // 3. Create the Firestore document
-      const userDocRef = doc(firestore, 'users', newUid);
-      const userProfile = {
-          uid: newUid,
+      const functions = getFunctions(app!, 'us-central1');
+      const createUser = httpsCallable(functions, 'createUser');
+      await createUser({
           email: values.email,
+          password: values.tempPassword,
           firstName: values.firstName,
           lastName: values.lastName,
-          name: `${values.firstName} ${values.lastName}`,
           role: finalRole,
           institutionId: roleType === 'admin' ? null : values.institutionId,
           branchIds: roleType === 'admin' ? ['01'] : values.branchIds,
@@ -173,10 +160,7 @@ function AddNewUserContent() {
           status: roleType === 'admin' ? 'Active' : values.status,
           appraisalLimit: roleType === 'admin' ? 0 : values.appraisalLimit,
           employeeId: roleType === 'admin' ? null : values.employeeId,
-          createdAt: serverTimestamp(),
-      };
-      
-      await setDoc(userDocRef, userProfile);
+      });
       
       const successMessage = `User ${values.firstName} ${values.lastName} created successfully.`;
       toast({ title: 'User Created', description: successMessage });
@@ -190,11 +174,12 @@ function AddNewUserContent() {
 
     } catch (e: any) {
       console.error('User creation failed:', e);
-      setError(e.message || 'An unexpected error occurred during user creation.');
+      const code = e instanceof FunctionsError ? e.code : e.code;
+      const message = e instanceof FunctionsError ? e.message : e.message;
+      setError(code === 'already-exists' || code === 'auth/email-already-in-use'
+        ? 'An account with this email already exists. Use a different email address.'
+        : message || 'An unexpected error occurred during user creation.');
     } finally {
-      if (secondaryApp) {
-          await deleteApp(secondaryApp);
-      }
       setLoading(false);
     }
   }

@@ -21,6 +21,15 @@ const smtpUser = defineSecret('SMTP_USER');
 const smtpPassword = defineSecret('SMTP_PASSWORD');
 const smtpFrom = defineSecret('SMTP_FROM');
 
+// Keep local development and the Firebase-hosted app authorized for callable
+// requests. The browser error occurs during OPTIONS preflight, before handler code.
+const callableCorsOrigins = [
+    /^http:\/\/localhost(:\d+)?$/,
+    /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+    /^https:\/\/saile-09554961-432e3\.(web\.app|firebaseapp\.com)$/,
+    /^https:\/\/.*\.cloudworkstations\.dev$/,
+];
+
 function createMailer() {
     const port = Number(smtpPort.value() || 587);
     return nodemailer.createTransport({
@@ -69,6 +78,7 @@ export const notifyCustomerLoanStage = onDocumentUpdated({
 /** Sends a staff invitation after confirming the caller and institution ownership. */
 export const sendStaffInvitationEmail = onCall({
     region: 'us-central1',
+    cors: callableCorsOrigins,
     secrets: [smtpHost, smtpPort, smtpUser, smtpPassword, smtpFrom],
 }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to send an invitation.');
@@ -106,7 +116,7 @@ const ensureRole = (auth: any, allowedRoles: string[]) => {
 /**
  * Generates a unique invitation code for an institution.
  */
-export const generateInviteCode = onCall({ region: "us-central1", cors: true }, async (request) => {
+export const generateInviteCode = onCall({ region: "us-central1", cors: callableCorsOrigins }, async (request) => {
     ensureRole(request.auth, ['admin', 'institution-admin']);
     
     const institutionId = request.auth!.token.institutionId;
@@ -294,16 +304,31 @@ export const activateUser = onCall({ region: "us-central1", cors: true }, async 
  * Legacy/Platform-level user creation (for Platform Admins).
  */
 export const createUser = onCall({ region: "us-central1", cors: true }, async (request) => {
-    ensureRole(request.auth, ['admin']);
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in again before creating a user.');
+    // Older platform administrator accounts may have the role on their profile
+    // without the corresponding custom claim. Trust the server-side profile as
+    // a fallback, while still requiring a platform-admin role.
+    const caller = await admin.firestore().collection('users').doc(request.auth.uid).get();
+    const callerRole = request.auth.token.role || caller.data()?.role;
+    if (callerRole !== 'admin') throw new HttpsError('permission-denied', 'Only a platform administrator can create users.');
 
-    const { email, password, firstName, lastName, role, institutionId } = request.data;
+    const { email, password, firstName, lastName, role, institutionId, branchIds, customRoleId, customRoleName, status, appraisalLimit, employeeId, phone, nationalId, forcePasswordReset } = request.data || {};
+    if (typeof email !== 'string' || typeof password !== 'string' || typeof firstName !== 'string' || typeof lastName !== 'string' || typeof role !== 'string') {
+        throw new HttpsError('invalid-argument', 'Email, password, first name, last name, and role are required.');
+    }
+    if (password.length < 8) throw new HttpsError('invalid-argument', 'Password must be at least 8 characters.');
+    if (!['admin', 'institution-admin', 'staff'].includes(role) && !customRoleId) {
+        throw new HttpsError('invalid-argument', 'Select a valid user role.');
+    }
 
+    let createdUid: string | undefined;
     try {
         const userRecord = await admin.auth().createUser({
             email,
             password,
             displayName: `${firstName} ${lastName}`,
         });
+        createdUid = userRecord.uid;
 
         await admin.auth().setCustomUserClaims(userRecord.uid, {
             role,
@@ -318,14 +343,30 @@ export const createUser = onCall({ region: "us-central1", cors: true }, async (r
             name: `${firstName} ${lastName}`,
             role,
             institutionId: institutionId || null,
-            status: 'Active',
+            branchIds: Array.isArray(branchIds) && branchIds.length ? branchIds : ['01'],
+            customRoleId: customRoleId || null,
+            customRoleName: customRoleName || null,
+            status: status || 'Active',
+            appraisalLimit: Number(appraisalLimit) || 0,
+            employeeId: employeeId || null,
+            phone: phone || null,
+            nationalId: nationalId || null,
+            forcePasswordReset: Boolean(forcePasswordReset),
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
         return { uid: userRecord.uid };
     } catch (error: any) {
         logger.error('Create user error:', error);
-        throw new HttpsError("internal", error.message);
+        if (createdUid) {
+            try { await admin.auth().deleteUser(createdUid); }
+            catch (cleanupError) { logger.error('Failed to clean up incomplete user creation:', cleanupError); }
+        }
+        if (error instanceof HttpsError) throw error;
+        if (error.code === 'auth/email-already-exists') throw new HttpsError('already-exists', 'An account with this email already exists.');
+        if (error.code === 'auth/invalid-email') throw new HttpsError('invalid-argument', 'Enter a valid email address.');
+        if (error.code === 'auth/weak-password') throw new HttpsError('invalid-argument', 'The temporary password does not meet Firebase password requirements.');
+        throw new HttpsError("internal", error.message || 'User creation failed.');
     }
 });
 

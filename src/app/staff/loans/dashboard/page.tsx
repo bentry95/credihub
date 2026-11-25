@@ -10,7 +10,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from '@/components/ui/card';
 import { DashboardPageHeader } from '@/components/staff/dashboard-page-header';
 import {
@@ -33,6 +32,7 @@ import {
   WalletCards,
   HandCoins,
   TrendingUp,
+  ArrowUpRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -51,7 +51,6 @@ import {
   orderBy,
   limit,
 } from 'firebase/firestore';
-import { Separator } from '@/components/ui/separator';
 import {
     ChartContainer,
     ChartTooltip,
@@ -59,27 +58,27 @@ import {
   } from "@/components/ui/chart"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Pie, PieChart, Cell, Legend as RechartsLegend } from "recharts"
 import { Skeleton } from '@/components/ui/skeleton';
-import { startOfMonth, endOfMonth, subMonths, format, addDays, isPast } from 'date-fns';
+import { startOfMonth, endOfMonth, subMonths, format, endOfDay, differenceInDays } from 'date-fns';
 import { useBranch } from '@/context/BranchContext';
 import { cn } from '@/lib/utils';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import type { DateRange } from 'react-day-picker';
-import { calculateAmortization, calculateRepaymentSplit } from '@/lib/finance';
+import { calculateAmortization } from '@/lib/finance';
 
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
 
 const formatCurrency = (value: number) => {
-    if (value >= 1_000_000_000) {
-        return `MWK ${(value / 1_000_000_000).toFixed(1)}B`;
-    }
-    if (value >= 1_000_000) {
-        return `MWK ${(value / 1_000_000).toFixed(1)}M`;
-    }
-    if (value >= 1_000) {
-        return `MWK ${(value / 1_000)}k`;
-    }
-    return `MWK ${value}`;
+    const amount = Number.isFinite(value) ? value : 0;
+    return `MWK ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const toDate = (value: any): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value.toDate === 'function') return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 function BranchSwitcher() {
@@ -120,7 +119,6 @@ function BranchSwitcher() {
 export default function LoansDashboardPage() {
   const { user } = useUser();
   const firestore = useFirestore();
-  const [currentDate, setCurrentDate] = useState<Date | null>(null);
   
   const { selectedBranch, availableBranches } = useBranch();
 
@@ -135,11 +133,6 @@ export default function LoansDashboardPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentDate(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const userDocRef = useMemoFirebase(
     () => (firestore && user?.uid ? doc(firestore, 'users', user.uid) : null),
@@ -191,7 +184,7 @@ export default function LoansDashboardPage() {
       const journalsQuery = query(
         collection(firestore, 'institutions', institutionId, 'journals'),
         where('date', '>=', Timestamp.fromDate(date.from)),
-        where('date', '<=', Timestamp.fromDate(date.to!))
+        where('date', '<=', Timestamp.fromDate(endOfDay(date.to || date.from)))
       );
       
       setLoadError(false);
@@ -219,8 +212,10 @@ export default function LoansDashboardPage() {
     }
     if (institutionId) {
       fetchData();
+    } else if (!isUserLoading) {
+      setIsLoading(false);
     }
-  }, [firestore, institutionId, date]);
+  }, [firestore, institutionId, date, isUserLoading]);
   
   // Client-side filtering
   const filteredCustomers = useMemo(() => {
@@ -245,37 +240,34 @@ export default function LoansDashboardPage() {
   const { data: loanProducts, isLoading: isProductsLoading } = useCollection(productsQuery);
   
   // --- KPI Calculations ---
-  const activeLoans = filteredLoans.filter(l => l.status === 'Disbursed' || l.status === 'Overdue');
-  const principalOutstanding = activeLoans.reduce((sum, l) => sum + (l.outstandingPrincipal || 0), 0);
+  const activeLoans = filteredLoans.filter(l =>
+    (l.status === 'Disbursed' || l.status === 'Overdue') &&
+    Number(l.outstandingPrincipal ?? l.amount) > 0
+  );
+  const principalOutstanding = activeLoans.reduce((sum, l) => sum + (Number(l.outstandingPrincipal ?? l.amount) || 0), 0);
   
   const disbursedInRange = useMemo(() => {
     if (!date?.from || !date?.to) return 0;
     return filteredLoans
       .filter(l => {
         if (!l.disbursalDate) return false;
-        const disbursalDate = l.disbursalDate.toDate();
-        return disbursalDate >= date.from! && disbursalDate <= date.to!;
+        const disbursalDate = toDate(l.disbursalDate);
+        if (!disbursalDate) return false;
+        return disbursalDate >= date.from! && disbursalDate <= endOfDay(date.to!);
       })
-      .reduce((sum, l) => sum + l.amount, 0);
+      .reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
   }, [filteredLoans, date]);
 
-  const newCustomersInRange = useMemo(() => {
-    if (!date?.from || !date?.to || !filteredCustomers) return 0;
-    return filteredCustomers.filter(c => {
-      if (!c.createdAt) return false;
-      const creationDate = c.createdAt.toDate();
-      return creationDate >= date.from! && creationDate <= date.to!;
-    }).length;
-  }, [filteredCustomers, date]);
-   const { loansInArrears, portfolioAtRisk, totalInterestArrears } = useMemo(() => {
-    if (!activeLoans || !loanProducts || !systemDate) return { loansInArrears: [], portfolioAtRisk: 0, totalInterestArrears: 0 };
+   const { loansInArrears, portfolioAtRisk } = useMemo(() => {
+    if (!activeLoans || !loanProducts) return { loansInArrears: [], portfolioAtRisk: 0 };
+    const portfolioDate = systemDate || new Date();
     
     let parValue = 0;
-    let totalInterestArrears = 0;
     
     const overdueLoansDetails = activeLoans.map(loan => {
       const product = loanProducts.find(p => p.id === loan.loanProductId);
-      if (!product || !loan.disbursalDate) return { loan, isOverdue: false, overdueAmount: 0 };
+      const disbursalDate = toDate(loan.disbursalDate);
+      if (!product || !disbursalDate || !Number(loan.amount) || !Number(loan.term)) return { loan, isOverdue: false, overdueAmount: 0, daysInArrears: 0, parBucket: 'Current' };
       
       const { schedule } = calculateAmortization({
         principal: loan.amount,
@@ -283,75 +275,66 @@ export default function LoansDashboardPage() {
         term: loan.term,
         tenureUnit: loan.tenureUnit,
         interestRateType: product.interestRateType,
-        startDate: loan.firstRepaymentDate?.toDate() || loan.disbursalDate?.toDate(),
+        startDate: toDate(loan.firstRepaymentDate) || disbursalDate,
       });
 
-      const totalPaid = (loan.amount || 0) - (loan.outstandingPrincipal || 0);
-
-      const installmentsDue = schedule.filter(row => isPast(row.paymentDate, systemDate));
-      const totalPrincipalDue = installmentsDue.reduce((sum, row) => sum + row.principal, 0);
-      const totalInterestDue = installmentsDue.reduce((sum, row) => sum + row.interest, 0);
-
-      let principalPaid = 0;
-      let interestPaid = 0;
-      let remainingPayment = totalPaid;
-
-      interestPaid = Math.min(remainingPayment, totalInterestDue);
-      remainingPayment -= interestPaid;
-      principalPaid = Math.min(remainingPayment, totalPrincipalDue);
-
-      const interestArrears = totalInterestDue - interestPaid;
-      
-      if (interestArrears > 0 || (totalPrincipalDue - principalPaid) > 0) {
-        parValue += loan.outstandingPrincipal;
-        totalInterestArrears += interestArrears;
-        return { loan, isOverdue: true, overdueAmount: (totalPrincipalDue - principalPaid) + interestArrears };
+      const installmentsDue = schedule.filter(row => row.paymentDate < portfolioDate);
+      const principalDue = installmentsDue.reduce((sum, row) => sum + row.principal, 0);
+      const principalPaid = Math.max(0, (Number(loan.amount) || 0) - (Number(loan.outstandingPrincipal ?? loan.amount) || 0));
+      // The loan record stores principal outstanding but not historical installment allocations.
+      // Calculate overdue principal only; interest arrears cannot be measured reliably from this data.
+      const overdueAmount = Math.max(0, principalDue - principalPaid);
+      const firstUnpaidDueDate = installmentsDue.find(row => row.paymentDate > disbursalDate)?.paymentDate;
+      if (overdueAmount > 0 && firstUnpaidDueDate) {
+        const daysInArrears = Math.max(0, differenceInDays(portfolioDate, firstUnpaidDueDate));
+        const parBucket = daysInArrears <= 30 ? '1–30 days' : daysInArrears <= 60 ? '31–60 days' : daysInArrears <= 90 ? '61–90 days' : '90+ days';
+        if (daysInArrears > 30) parValue += Number(loan.outstandingPrincipal ?? loan.amount) || 0;
+        return { loan, isOverdue: true, overdueAmount, daysInArrears, parBucket };
       }
-      
-      return { loan, isOverdue: false, overdueAmount: 0 };
+      return { loan, isOverdue: false, overdueAmount: 0, daysInArrears: 0, parBucket: 'Current' };
     });
 
-    const loansInArrears = overdueLoansDetails.filter(d => d.isOverdue).map(d => ({ ...d.loan, overdueAmount: d.overdueAmount }));
+    const loansInArrears = overdueLoansDetails.filter(d => d.isOverdue).map(d => ({ ...d.loan, overdueAmount: d.overdueAmount, daysInArrears: d.daysInArrears, parBucket: d.parBucket }));
 
-    return { loansInArrears, portfolioAtRisk: parValue, totalInterestArrears };
+    return { loansInArrears, portfolioAtRisk: parValue };
   }, [activeLoans, loanProducts, systemDate]);
 
-  const grossLoanPortfolio = principalOutstanding + totalInterestArrears;
+  const parRatio = principalOutstanding > 0 ? (portfolioAtRisk / principalOutstanding) * 100 : 0;
 
 
   const repaymentsInRange = useMemo(() => {
-    if (!filteredJournals || !loanProducts) return 0;
+    if (!filteredJournals) return 0;
     
     return filteredJournals
-      .filter(journal => 
-        journal.status === 'Posted' && journal.repaymentAmount > 0
-      )
-      .reduce((sum: number, journal: any) => sum + journal.repaymentAmount, 0);
-  }, [filteredJournals, loanProducts]);
+      .filter(journal => journal.status === 'Posted' && Number(journal.repaymentAmount) > 0)
+      .reduce((sum: number, journal: any) => sum + Number(journal.repaymentAmount), 0);
+  }, [filteredJournals]);
 
   // --- Chart Data ---
   const monthlyDisbursementData = useMemo(() => {
     if (!filteredLoans) return [];
     const monthlyTotals = Array.from({ length: 6 }, (_, i) => {
-        const monthDate = subMonths(new Date(), 5 - i);
+        const monthDate = subMonths(startOfMonth(systemDate || new Date()), 5 - i);
         return {
-            month: format(monthDate, 'MMM'),
+            month: format(monthDate, 'MMM yy'),
+            key: format(monthDate, 'yyyy-MM'),
             total: 0,
         };
     });
 
     filteredLoans.forEach(loan => {
         if (loan.disbursalDate) {
-            const disbursementDate = loan.disbursalDate.toDate();
-            const monthStr = format(disbursementDate, 'MMM');
-            const monthIndex = monthlyTotals.findIndex(m => m.month === monthStr);
+            const disbursementDate = toDate(loan.disbursalDate);
+            if (!disbursementDate) return;
+            const monthStr = format(disbursementDate, 'yyyy-MM');
+            const monthIndex = monthlyTotals.findIndex(m => m.key === monthStr);
             if (monthIndex !== -1) {
-                monthlyTotals[monthIndex].total += loan.amount;
+                monthlyTotals[monthIndex].total += Number(loan.amount) || 0;
             }
         }
     });
     return monthlyTotals;
-  }, [filteredLoans]);
+  }, [filteredLoans, systemDate]);
 
   const portfolioByProductData = useMemo(() => {
     if (!activeLoans || !loanProducts) return [];
@@ -368,25 +351,22 @@ export default function LoansDashboardPage() {
   // --- Table Data ---
   const loansAwaitingDisbursement = filteredLoans.filter(l => l.status === 'Approved');
 
-  const getCustomerName = (customerId: string) => filteredCustomers?.find(c => c.id === customerId)?.name || '...';
+  const getCustomerName = (customerId: string) => filteredCustomers?.find(c => c.id === customerId)?.name || 'Unknown customer';
+  const getProductName = (loanProductId: string) => loanProducts?.find(product => product.id === loanProductId)?.name || '—';
   
-  const calculateDaysOverdue = (firstRepaymentDate?: Timestamp) => {
-    if (!firstRepaymentDate || !systemDate) return 0;
-    const diff = systemDate.getTime() - firstRepaymentDate.toDate().getTime();
-    return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
-  }
+  const averageOutstanding = activeLoans.length ? principalOutstanding / activeLoans.length : 0;
 
   const pageIsLoading = isUserLoading || isInstitutionLoading || isProductsLoading || isLoading || isFyLoading;
 
   const kpiData = [
-    { title: 'Gross Loan Portfolio', value: `MWK ${grossLoanPortfolio.toLocaleString()}`, icon: WalletCards },
+    { title: 'Outstanding Portfolio', value: formatCurrency(principalOutstanding), icon: WalletCards },
     { title: 'Active Loans', value: activeLoans.length, icon: Landmark },
-    { title: 'Total Customers', value: filteredCustomers?.length || 0, icon: Users },
-    { title: 'Portfolio at Risk (>30d)', value: `MWK ${portfolioAtRisk.toLocaleString()}`, icon: FileWarning },
-    { title: 'Disbursed', value: `MWK ${disbursedInRange.toLocaleString()}`, icon: TrendingUp },
-    { title: 'Repayments', value: `MWK ${repaymentsInRange.toLocaleString()}`, icon: HandCoins },
-    { title: 'New Customers', value: newCustomersInRange, icon: Users },
-    { title: 'Loans in Arrears', value: loansInArrears.length, icon: ListTodo },
+    { title: 'PAR > 30 days (est.)', value: `${formatCurrency(portfolioAtRisk)} · ${parRatio.toFixed(1)}%`, icon: FileWarning },
+    { title: 'Disbursed in period', value: formatCurrency(disbursedInRange), icon: TrendingUp },
+    { title: 'Collections in period', value: formatCurrency(repaymentsInRange), icon: HandCoins },
+    { title: 'Approved to disburse', value: loansAwaitingDisbursement?.length || 0, icon: CircleDollarSign },
+    { title: 'Loans in arrears', value: loansInArrears.length, icon: ListTodo },
+    { title: 'Average outstanding', value: formatCurrency(averageOutstanding), icon: Users },
   ];
 
   return (
@@ -453,7 +433,8 @@ export default function LoansDashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             <Card className="rounded-2xl border-border/70 shadow-sm lg:col-span-3">
                 <CardHeader>
-                    <CardTitle>New Loans Disbursed (by Month)</CardTitle>
+                    <CardTitle>Disbursements · last six months</CardTitle>
+                    <CardDescription>Loan principal funded each month for the selected branch.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {pageIsLoading ? <Skeleton className="h-[250px] w-full" /> : (
@@ -471,7 +452,8 @@ export default function LoansDashboardPage() {
             </Card>
             <Card className="rounded-2xl border-border/70 shadow-sm lg:col-span-2">
                 <CardHeader>
-                    <CardTitle>Portfolio by Product</CardTitle>
+                    <CardTitle>Outstanding by Product</CardTitle>
+                    <CardDescription>Current principal balance across active loan products.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {pageIsLoading ? <Skeleton className="h-[250px] w-full" /> : (
@@ -499,20 +481,22 @@ export default function LoansDashboardPage() {
                 </CardHeader>
                 <CardContent>
                     <Table>
-                        <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead>Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead>Loan product</TableHead><TableHead>Approved</TableHead><TableHead>Amount</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                         <TableBody>
                             {pageIsLoading ? (
-                                Array.from({ length: 2 }).map((_, i) => <TableRow key={i}><TableCell colSpan={3}><Skeleton className="h-6 w-full"/></TableCell></TableRow>)
+                                Array.from({ length: 2 }).map((_, i) => <TableRow key={i}><TableCell colSpan={5}><Skeleton className="h-6 w-full"/></TableCell></TableRow>)
                             ) : loansAwaitingDisbursement.length > 0 ? (
-                                loansAwaitingDisbursement.map(loan => (
+                                loansAwaitingDisbursement.slice(0, 8).map(loan => (
                                     <TableRow key={loan.id}>
                                         <TableCell>{getCustomerName(loan.customerId)}</TableCell>
-                                        <TableCell>MWK {loan.amount.toLocaleString()}</TableCell>
+                                        <TableCell>{getProductName(loan.loanProductId)}</TableCell>
+                                        <TableCell>{toDate(loan.approvalDate) ? format(toDate(loan.approvalDate)!, 'dd MMM yyyy') : '—'}</TableCell>
+                                        <TableCell>{formatCurrency(Number(loan.amount) || 0)}</TableCell>
                                         <TableCell className="text-right"><Button asChild size="sm"><Link href={`/staff/accounts/loan-disbursement?id=${loan.id}`}>Disburse</Link></Button></TableCell>
                                     </TableRow>
                                 ))
                             ) : (
-                                <TableRow><TableCell colSpan={3} className="h-24 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-muted-foreground mb-2"/> No loans are waiting for disbursement.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={5} className="h-24 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-muted-foreground mb-2"/> No loans are waiting for disbursement.</TableCell></TableRow>
                             )}
                         </TableBody>
                     </Table>
@@ -520,25 +504,28 @@ export default function LoansDashboardPage() {
             </Card>
             <Card className="rounded-2xl border-border/70 shadow-sm">
                 <CardHeader>
-                    <CardTitle>Top 5 Loans in Arrears</CardTitle>
-                    <CardDescription>Customers with overdue payments needing follow-up.</CardDescription>
+                    <CardTitle>Highest arrears exposure</CardTitle>
+                    <CardDescription>Loans with the largest estimated overdue principal. Interest arrears are not included. Select a loan to open its 360° view.</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="overflow-x-auto">
                     <Table>
-                        <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead>Days Overdue</TableHead><TableHead className="text-right">Overdue Amount</TableHead></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Customer / Product</TableHead><TableHead>Risk band</TableHead><TableHead>Days</TableHead><TableHead className="text-right">Outstanding</TableHead><TableHead className="text-right">Overdue principal</TableHead><TableHead/></TableRow></TableHeader>
                         <TableBody>
                             {pageIsLoading ? (
-                                Array.from({ length: 2 }).map((_, i) => <TableRow key={i}><TableCell colSpan={3}><Skeleton className="h-6 w-full"/></TableCell></TableRow>)
+                                Array.from({ length: 2 }).map((_, i) => <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-6 w-full"/></TableCell></TableRow>)
                             ) : loansInArrears.length > 0 ? (
-                                loansInArrears.slice(0, 5).map(loan => (
+                                [...loansInArrears].sort((a, b) => b.overdueAmount - a.overdueAmount).slice(0, 5).map(loan => (
                                     <TableRow key={loan.id}>
-                                        <TableCell>{getCustomerName(loan.customerId)}</TableCell>
-                                        <TableCell>{calculateDaysOverdue(loan.firstRepaymentDate)}</TableCell>
-                                        <TableCell className="text-right">MWK {loan.overdueAmount ? loan.overdueAmount.toLocaleString() : '0'}</TableCell>
+                                        <TableCell><div className="font-medium">{getCustomerName(loan.customerId)}</div><div className="text-xs text-muted-foreground">{getProductName(loan.loanProductId)}</div></TableCell>
+                                        <TableCell><span className={loan.daysInArrears > 30 ? 'font-medium text-destructive' : 'text-muted-foreground'}>{loan.parBucket}</span></TableCell>
+                                        <TableCell>{loan.daysInArrears}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(Number(loan.outstandingPrincipal ?? loan.amount) || 0)}</TableCell>
+                                        <TableCell className="text-right font-medium">{formatCurrency(loan.overdueAmount || 0)}</TableCell>
+                                        <TableCell className="text-right"><Button asChild variant="ghost" size="icon"><Link aria-label="Open loan details" href={`/staff/loans/loan-details/${loan.id}`}><ArrowUpRight className="h-4 w-4"/></Link></Button></TableCell>
                                     </TableRow>
                                 ))
                             ) : (
-                                 <TableRow><TableCell colSpan={3} className="h-24 text-center"><ListTodo className="mx-auto h-8 w-8 text-muted-foreground mb-2" /> No loans are currently in arrears.</TableCell></TableRow>
+                                 <TableRow><TableCell colSpan={6} className="h-24 text-center"><ListTodo className="mx-auto h-8 w-8 text-muted-foreground mb-2" /> No loans are currently in arrears.</TableCell></TableRow>
                             )}
                         </TableBody>
                     </Table>
