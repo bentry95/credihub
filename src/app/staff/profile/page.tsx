@@ -6,8 +6,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
+  AtSign,
   User as UserIcon,
-  Mail,
   Building,
   KeyRound,
   Eye,
@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import {
   useUser,
-  useAuth,
   useFirestore,
   useDoc,
   useMemoFirebase,
@@ -32,7 +31,6 @@ import {
 import { doc, updateDoc } from 'firebase/firestore';
 import { updateProfile, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { ref, uploadString, getDownloadURL } from "firebase/storage";
-import Image from 'next/image';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -61,7 +59,6 @@ const passwordFormSchema = z.object({
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
-  const auth = useAuth();
   const firestore = useFirestore();
   const storage = useStorage();
 
@@ -137,7 +134,7 @@ export default function ProfilePage() {
     setUpdateError(null);
     setUpdateSuccess(null);
     try {
-      if (!user || !userDocRef || !storage || !userData?.institutionId) throw new Error('User or configuration not found.');
+      if (!user || !userDocRef || !storage) throw new Error('User or configuration not found.');
       
       const fullName = `${values.firstName} ${values.lastName}`;
       let photoDownloadUrl = user.photoURL || '';
@@ -194,49 +191,63 @@ export default function ProfilePage() {
 
   const isLoading = isUserLoading || isUserDataLoading || isInstitutionLoading;
   const userRole = userData?.role === 'institution-admin' ? 'Institution Admin' : 'Staff';
+  const displayName = userData?.name || user?.displayName || 'Staff member';
+  const initials = displayName.split(/\s+/).map((part: string) => part[0]).join('').slice(0, 2).toUpperCase();
 
   if (isLoading) {
       return (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-1"><Skeleton className="h-96 w-full" /></div>
-              <div className="lg:col-span-2"><Skeleton className="h-96 w-full" /></div>
+          <div className="space-y-6">
+              <div className="space-y-2"><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-72" /></div>
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                <Skeleton className="h-80 w-full" />
+                <Skeleton className="h-96 w-full lg:col-span-2" />
+              </div>
           </div>
       )
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        <Card className="lg:col-span-1">
-            <CardHeader className="items-center">
-                <Avatar className="h-32 w-32 mb-4">
-                    <AvatarImage src={photoPreview || user?.photoURL || ''} alt={user?.displayName || 'User'} />
-                    <AvatarFallback className="text-4xl">{user?.displayName?.charAt(0)}</AvatarFallback>
-                </Avatar>
-                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="mr-2 h-4 w-4"/> Change Photo</Button>
-                <CardTitle className="pt-4">{userData?.name}</CardTitle>
-                <CardDescription>{user?.email}</CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm">
-                <div className="space-y-4">
-                    <div className="flex items-center gap-3"><Briefcase className="h-5 w-5 text-muted-foreground" /><p>{userData?.customRoleName || userRole}</p></div>
-                    <div className="flex items-center gap-3"><Building className="h-5 w-5 text-muted-foreground" /><p>{institutionData?.name}</p></div>
-                    <div className="flex items-center gap-3"><Hash className="h-5 w-5 text-muted-foreground" /><p>Employee ID: {userData?.employeeId || 'N/A'}</p></div>
-                    <div className="flex items-center gap-3"><Phone className="h-5 w-5 text-muted-foreground" /><p>{userData?.phone || 'Not provided'}</p></div>
-                </div>
-            </CardContent>
+    <div className="space-y-6">
+      <header>
+        <p className="text-sm font-medium text-primary">Account</p>
+        <h1 className="mt-1 text-3xl font-bold tracking-tight">My profile</h1>
+        <p className="mt-2 text-muted-foreground">Manage your personal information and sign-in security.</p>
+      </header>
+
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+        <Card className="overflow-hidden lg:col-span-1">
+          <div className="h-2 bg-primary" />
+          <CardHeader className="items-center px-6 pb-5 pt-7 text-center">
+            <Avatar className="mb-2 h-24 w-24 ring-4 ring-primary/10">
+              <AvatarImage src={photoPreview || user?.photoURL || ''} alt={displayName} />
+              <AvatarFallback className="bg-primary/10 text-2xl font-semibold text-primary">{initials}</AvatarFallback>
+            </Avatar>
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="mr-2 h-4 w-4" /> Change photo
+            </Button>
+            <CardTitle className="pt-2 text-xl">{displayName}</CardTitle>
+            <CardDescription className="flex items-center gap-1.5"><AtSign className="h-3.5 w-3.5" />{user?.email}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 border-t bg-muted/20 px-6 py-5 text-sm">
+            <div className="flex items-start gap-3"><Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-xs text-muted-foreground">Role</p><p className="mt-0.5 font-medium">{userData?.customRoleName || userRole}</p></div></div>
+            <div className="flex items-start gap-3"><Building className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-xs text-muted-foreground">Institution</p><p className="mt-0.5 font-medium">{institutionData?.name || 'Not assigned'}</p></div></div>
+            <div className="flex items-start gap-3"><Hash className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-xs text-muted-foreground">Employee ID</p><p className="mt-0.5 font-medium">{userData?.employeeId || 'Not assigned'}</p></div></div>
+            <div className="flex items-start gap-3"><Phone className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-xs text-muted-foreground">Phone</p><p className="mt-0.5 font-medium">{userData?.phone || 'Not provided'}</p></div></div>
+          </CardContent>
         </Card>
-      <div className="lg:col-span-2">
-        <Tabs defaultValue="profile">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="profile">Update Profile</TabsTrigger>
-              <TabsTrigger value="password">Change Password</TabsTrigger>
+
+        <div className="lg:col-span-2">
+          <Tabs defaultValue="profile">
+            <TabsList className="mb-4 grid h-auto w-full grid-cols-2 rounded-xl bg-muted p-1">
+              <TabsTrigger className="rounded-lg py-2.5" value="profile"><UserIcon className="mr-2 h-4 w-4" />Personal details</TabsTrigger>
+              <TabsTrigger className="rounded-lg py-2.5" value="password"><KeyRound className="mr-2 h-4 w-4" />Password & security</TabsTrigger>
             </TabsList>
             <TabsContent value="profile">
                 <Card>
                     <CardHeader>
-                        <CardTitle>Edit Information</CardTitle>
-                        <CardDescription>Update your personal details here.</CardDescription>
+                        <CardTitle>Personal information</CardTitle>
+                        <CardDescription>Keep your contact details up to date.</CardDescription>
                     </CardHeader>
                     <Form {...profileForm}>
                         <form onSubmit={profileForm.handleSubmit(onProfileSubmit)}>
@@ -247,14 +258,16 @@ export default function ProfilePage() {
                         {updateSuccess && (
                             <Alert variant="default" className="bg-green-100 border-green-300"><CheckCircle className="h-4 w-4 text-green-700" /><AlertTitle className="text-green-800">Success</AlertTitle><AlertDescription className="text-green-700">{updateSuccess}</AlertDescription></Alert>
                         )}
-                        <FormField control={profileForm.control} name="firstName" render={({ field }) => (<FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                        <FormField control={profileForm.control} name="lastName" render={({ field }) => (<FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={profileForm.control} name="phone" render={({ field }) => (<FormItem><FormLabel>Phone Number</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                          <FormField control={profileForm.control} name="firstName" render={({ field }) => (<FormItem><FormLabel>First name</FormLabel><FormControl><Input autoComplete="given-name" placeholder="First name" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                          <FormField control={profileForm.control} name="lastName" render={({ field }) => (<FormItem><FormLabel>Last name</FormLabel><FormControl><Input autoComplete="family-name" placeholder="Last name" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                        </div>
+                        <FormField control={profileForm.control} name="phone" render={({ field }) => (<FormItem><FormLabel>Phone number</FormLabel><FormControl><Input type="tel" autoComplete="tel" placeholder="Add a phone number" {...field} /></FormControl><FormMessage /></FormItem>)} />
                         </CardContent>
                         <CardFooter className="justify-end">
                             <Button type="submit" disabled={updateLoading || !profileForm.formState.isDirty}>
                             {updateLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Update Profile
+                            Save changes
                             </Button>
                         </CardFooter>
                         </form>
@@ -265,7 +278,7 @@ export default function ProfilePage() {
                 <Card>
                     <CardHeader>
                         <CardTitle>Change Password</CardTitle>
-                        <CardDescription>Enter your current and new password to update your login credentials.</CardDescription>
+                        <CardDescription>Use your current password to confirm this change. Choose at least 6 characters.</CardDescription>
                     </CardHeader>
                     <Form {...passwordForm}>
                         <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)}>
@@ -313,7 +326,8 @@ export default function ProfilePage() {
                     </Form>
                 </Card>
             </TabsContent>
-        </Tabs>
+          </Tabs>
+        </div>
       </div>
     </div>
   );
